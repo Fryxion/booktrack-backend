@@ -1,29 +1,41 @@
 const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
-const db = require('../config/database');
-const { auth, isStaff } = require('../middleware/auth');
+const pool = require('../config/database');
+const { auth, checkRole } = require('../middleware/auth');
 
 // @route   GET /api/livros
+// @desc    Listar todos os livros (com filtros opcionais)
+// @access  Public
 router.get('/', async (req, res) => {
   try {
-    const { search, categoria } = req.query;
-    let sql = 'SELECT * FROM livros WHERE 1=1';
+    const { categoria, disponivel, pesquisa } = req.query;
+    
+    let query = 'SELECT * FROM livros WHERE 1=1';
     const params = [];
 
-    if (search) {
-      sql += ' AND (titulo LIKE ? OR autor LIKE ?)';
-      params.push(`%${search}%`, `%${search}%`);
-    }
-
+    // Filtro por categoria
     if (categoria) {
-      sql += ' AND categoria = ?';
+      query += ' AND categoria = ?';
       params.push(categoria);
     }
 
-    sql += ' ORDER BY titulo ASC';
+    // Filtro por disponibilidade
+    if (disponivel === 'true') {
+      query += ' AND copias_disponiveis > 0';
+    } else if (disponivel === 'false') {
+      query += ' AND copias_disponiveis = 0';
+    }
 
-    const [livros] = await db.query(sql, params);
+    // Filtro por pesquisa (título ou autor)
+    if (pesquisa) {
+      query += ' AND (titulo LIKE ? OR autor LIKE ?)';
+      params.push(`%${pesquisa}%`, `%${pesquisa}%`);
+    }
+
+    query += ' ORDER BY titulo';
+
+    const [livros] = await pool.query(query, params);
 
     res.json({
       success: true,
@@ -31,157 +43,256 @@ router.get('/', async (req, res) => {
       data: livros
     });
   } catch (error) {
-    console.error('Erro:', error);
-    res.status(500).json({ success: false, message: 'Erro ao listar livros' });
+    console.error('Erro ao listar livros:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao listar livros'
+    });
   }
 });
 
 // @route   GET /api/livros/:id
+// @desc    Obter detalhes de um livro específico
+// @access  Public
 router.get('/:id', async (req, res) => {
   try {
-    const [livros] = await db.query('SELECT * FROM livros WHERE id_livro = ?', [req.params.id]);
+    const [livros] = await pool.query(
+      'SELECT * FROM livros WHERE id_livro = ?',
+      [req.params.id]
+    );
 
     if (livros.length === 0) {
-      return res.status(404).json({ success: false, message: 'Livro não encontrado' });
+      return res.status(404).json({
+        success: false,
+        message: 'Livro não encontrado'
+      });
     }
 
-    res.json({ success: true, data: livros[0] });
+    res.json({
+      success: true,
+      data: livros[0]
+    });
   } catch (error) {
-    console.error('Erro:', error);
-    res.status(500).json({ success: false, message: 'Erro ao obter livro' });
+    console.error('Erro ao obter livro:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao obter detalhes do livro'
+    });
   }
 });
 
 // @route   POST /api/livros
-router.post('/', [auth, isStaff], [
-  body('titulo').trim().notEmpty(),
-  body('autor').trim().notEmpty(),
-  body('isbn').trim().notEmpty(),
-  body('categoria').trim().notEmpty(),
-  body('total_copias').isInt({ min: 1 })
+// @desc    Criar novo livro
+// @access  Private (Bibliotecário apenas)
+router.post('/', auth, checkRole(['bibliotecario']), [
+  body('titulo').trim().notEmpty().withMessage('Título é obrigatório'),
+  body('autor').trim().notEmpty().withMessage('Autor é obrigatório'),
+  body('isbn').trim().notEmpty().withMessage('ISBN é obrigatório'),
+  body('total_copias').isInt({ min: 1 }).withMessage('Total de cópias deve ser um número positivo')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: errors.array() });
+      return res.status(400).json({
+        success: false,
+        errors: errors.array()
+      });
     }
 
     const { titulo, autor, isbn, categoria, descricao, data_publicacao, total_copias } = req.body;
 
-    const [existing] = await db.query('SELECT id_livro FROM livros WHERE isbn = ?', [isbn]);
-    if (existing.length > 0) {
-      return res.status(400).json({ success: false, message: 'ISBN já existe' });
-    }
-
-    const [result] = await db.query(
-      `INSERT INTO livros (titulo, autor, isbn, categoria, descricao, data_publicacao, total_copias, copias_disponiveis)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [titulo, autor, isbn, categoria, descricao, data_publicacao, total_copias, total_copias]
+    // Verificar se ISBN já existe
+    const [existingBook] = await pool.query(
+      'SELECT id_livro FROM livros WHERE isbn = ?',
+      [isbn]
     );
 
-    const [novoLivro] = await db.query('SELECT * FROM livros WHERE id_livro = ?', [result.insertId]);
+    if (existingBook.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Já existe um livro com este ISBN'
+      });
+    }
+
+    // Inserir livro
+    const [result] = await pool.query(
+      `INSERT INTO livros (titulo, autor, isbn, categoria, descricao, data_publicacao, total_copias, copias_disponiveis) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [titulo, autor, isbn, categoria || null, descricao || null, data_publicacao || null, total_copias, total_copias]
+    );
 
     res.status(201).json({
       success: true,
       message: 'Livro criado com sucesso',
-      data: novoLivro[0]
+      data: {
+        id: result.insertId,
+        titulo,
+        autor,
+        isbn,
+        categoria,
+        descricao,
+        data_publicacao,
+        total_copias,
+        copias_disponiveis: total_copias
+      }
     });
   } catch (error) {
-    console.error('Erro:', error);
-    res.status(500).json({ success: false, message: 'Erro ao criar livro' });
+    console.error('Erro ao criar livro:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao criar livro'
+    });
   }
 });
 
 // @route   PUT /api/livros/:id
-router.put('/:id', [auth, isStaff], async (req, res) => {
+// @desc    Atualizar livro
+// @access  Private (Bibliotecário apenas)
+router.put('/:id', auth, checkRole(['bibliotecario']), [
+  body('titulo').optional().trim().notEmpty().withMessage('Título não pode ser vazio'),
+  body('autor').optional().trim().notEmpty().withMessage('Autor não pode ser vazio'),
+  body('isbn').optional().trim().notEmpty().withMessage('ISBN não pode ser vazio')
+], async (req, res) => {
   try {
-    const { id } = req.params;
-    const { titulo, autor, isbn, categoria, descricao, data_publicacao, total_copias, copias_disponiveis } = req.body;
-
-    const [livros] = await db.query('SELECT * FROM livros WHERE id_livro = ?', [id]);
-    if (livros.length === 0) {
-      return res.status(404).json({ success: false, message: 'Livro não encontrado' });
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array()
+      });
     }
 
-    if (isbn) {
-      const [existing] = await db.query('SELECT id_livro FROM livros WHERE isbn = ? AND id_livro != ?', [isbn, id]);
-      if (existing.length > 0) {
-        return res.status(400).json({ success: false, message: 'ISBN já existe' });
+    const { titulo, autor, isbn, categoria, descricao, data_publicacao, total_copias } = req.body;
+
+    // Verificar se livro existe
+    const [existingBook] = await pool.query(
+      'SELECT * FROM livros WHERE id_livro = ?',
+      [req.params.id]
+    );
+
+    if (existingBook.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Livro não encontrado'
+      });
+    }
+
+    const livro = existingBook[0];
+
+    // Se alterar o total de cópias, ajustar as disponíveis
+    let copias_disponiveis = livro.copias_disponiveis;
+    if (total_copias !== undefined) {
+      const diferenca = total_copias - livro.total_copias;
+      copias_disponiveis = Math.max(0, livro.copias_disponiveis + diferenca);
+    }
+
+    // Verificar ISBN duplicado (se alterado)
+    if (isbn && isbn !== livro.isbn) {
+      const [duplicateISBN] = await pool.query(
+        'SELECT id_livro FROM livros WHERE isbn = ? AND id_livro != ?',
+        [isbn, req.params.id]
+      );
+
+      if (duplicateISBN.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Já existe outro livro com este ISBN'
+        });
       }
     }
 
-    await db.query(
-      `UPDATE livros SET 
-        titulo = COALESCE(?, titulo),
-        autor = COALESCE(?, autor),
-        isbn = COALESCE(?, isbn),
-        categoria = COALESCE(?, categoria),
-        descricao = COALESCE(?, descricao),
-        data_publicacao = COALESCE(?, data_publicacao),
-        total_copias = COALESCE(?, total_copias),
-        copias_disponiveis = COALESCE(?, copias_disponiveis)
-      WHERE id_livro = ?`,
-      [titulo, autor, isbn, categoria, descricao, data_publicacao, total_copias, copias_disponiveis, id]
+    // Atualizar livro
+    await pool.query(
+      `UPDATE livros 
+       SET titulo = COALESCE(?, titulo),
+           autor = COALESCE(?, autor),
+           isbn = COALESCE(?, isbn),
+           categoria = COALESCE(?, categoria),
+           descricao = COALESCE(?, descricao),
+           data_publicacao = COALESCE(?, data_publicacao),
+           total_copias = COALESCE(?, total_copias),
+           copias_disponiveis = ?
+       WHERE id_livro = ?`,
+      [titulo, autor, isbn, categoria, descricao, data_publicacao, total_copias, copias_disponiveis, req.params.id]
     );
 
-    const [livroAtualizado] = await db.query('SELECT * FROM livros WHERE id_livro = ?', [id]);
+    // Buscar livro atualizado
+    const [updatedBook] = await pool.query(
+      'SELECT * FROM livros WHERE id_livro = ?',
+      [req.params.id]
+    );
 
     res.json({
       success: true,
       message: 'Livro atualizado com sucesso',
-      data: livroAtualizado[0]
+      data: updatedBook[0]
     });
   } catch (error) {
-    console.error('Erro:', error);
-    res.status(500).json({ success: false, message: 'Erro ao atualizar livro' });
+    console.error('Erro ao atualizar livro:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao atualizar livro'
+    });
   }
 });
 
 // @route   DELETE /api/livros/:id
-router.delete('/:id', [auth, isStaff], async (req, res) => {
+// @desc    Eliminar livro
+// @access  Private (Bibliotecário apenas)
+router.delete('/:id', auth, checkRole(['bibliotecario']), async (req, res) => {
   try {
-    const { id } = req.params;
+    // Verificar se livro existe
+    const [livros] = await pool.query(
+      'SELECT id_livro FROM livros WHERE id_livro = ?',
+      [req.params.id]
+    );
 
-    const [livros] = await db.query('SELECT * FROM livros WHERE id_livro = ?', [id]);
     if (livros.length === 0) {
-      return res.status(404).json({ success: false, message: 'Livro não encontrado' });
+      return res.status(404).json({
+        success: false,
+        message: 'Livro não encontrado'
+      });
     }
 
-    const [reservasAtivas] = await db.query(
-      'SELECT COUNT(*) as count FROM reservas WHERE id_livro = ? AND estado = ?',
-      [id, 'pendente']
+    // Verificar se existem empréstimos ativos
+    const [emprestimosAtivos] = await pool.query(
+      'SELECT id_emprestimo FROM emprestimos WHERE id_livro = ? AND data_publicacao = ?',
+      [req.params.id, 'ativo']
     );
 
-    const [emprestimosAtivos] = await db.query(
-      'SELECT COUNT(*) as count FROM emprestimos WHERE id_livro = ? AND estado = ?',
-      [id, 'ativo']
-    );
-
-    if (reservasAtivas[0].count > 0 || emprestimosAtivos[0].count > 0) {
-      return res.status(400).json({ success: false, message: 'Livro tem reservas ou empréstimos ativos' });
+    if (emprestimosAtivos.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Não é possível eliminar livro com empréstimos ativos'
+      });
     }
 
-    await db.query('DELETE FROM livros WHERE id_livro = ?', [id]);
+    // Verificar se existem reservas pendentes
+    const [reservasPendentes] = await pool.query(
+      'SELECT id_reserva FROM reservas WHERE id_livro = ? AND estado = ?',
+      [req.params.id, 'pendente']
+    );
 
-    res.json({ success: true, message: 'Livro eliminado com sucesso' });
-  } catch (error) {
-    console.error('Erro:', error);
-    res.status(500).json({ success: false, message: 'Erro ao eliminar livro' });
-  }
-});
+    if (reservasPendentes.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Não é possível eliminar livro com reservas pendentes'
+      });
+    }
 
-// @route   GET /api/livros/categorias/list
-router.get('/categorias/list', async (req, res) => {
-  try {
-    const [categorias] = await db.query('SELECT DISTINCT categoria FROM livros WHERE categoria IS NOT NULL ORDER BY categoria');
+    // Eliminar livro
+    await pool.query('DELETE FROM livros WHERE id_livro = ?', [req.params.id]);
 
     res.json({
       success: true,
-      data: categorias.map(c => c.categoria)
+      message: 'Livro eliminado com sucesso'
     });
   } catch (error) {
-    console.error('Erro:', error);
-    res.status(500).json({ success: false, message: 'Erro ao listar categorias' });
+    console.error('Erro ao eliminar livro:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao eliminar livro'
+    });
   }
 });
 

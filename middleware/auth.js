@@ -25,20 +25,56 @@ const auth = (req, res, next) => {
   }
 };
 
-// Middleware para verificar se o utilizador é admin
-const isAdmin = (req, res, next) => {
-  if (req.user.tipo !== 'Admin') {
+// Middleware para verificar role/tipo do utilizador
+// Aceita um array de tipos permitidos: ['aluno', 'professor', 'bibliotecario']
+const checkRole = (allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Autenticação necessária.'
+      });
+    }
+
+    if (!allowedRoles.includes(req.user.tipo)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Acesso negado. Permissões insuficientes.'
+      });
+    }
+
+    next();
+  };
+};
+
+// Middleware específico para verificar se é bibliotecário
+const isBibliotecario = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Autenticação necessária.'
+    });
+  }
+
+  if (req.user.tipo !== 'bibliotecario') {
     return res.status(403).json({
       success: false,
-      message: 'Acesso negado. Apenas administradores podem realizar esta ação.'
+      message: 'Acesso negado. Apenas bibliotecários podem realizar esta ação.'
     });
   }
   next();
 };
 
-// Middleware para verificar se o utilizador é funcionário ou admin
+// Middleware específico para verificar se é professor ou bibliotecário
 const isStaff = (req, res, next) => {
-  if (req.user.tipo !== 'Admin' && req.user.tipo !== 'Funcionário') {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Autenticação necessária.'
+    });
+  }
+
+  if (req.user.tipo !== 'professor' && req.user.tipo !== 'bibliotecario') {
     return res.status(403).json({
       success: false,
       message: 'Acesso negado. Permissões insuficientes.'
@@ -47,4 +83,9 @@ const isStaff = (req, res, next) => {
   next();
 };
 
-module.exports = { auth, isAdmin, isStaff };
+module.exports = { 
+  auth, 
+  checkRole, 
+  isBibliotecario, 
+  isStaff 
+};

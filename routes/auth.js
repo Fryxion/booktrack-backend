@@ -6,16 +6,6 @@ const { body, validationResult } = require('express-validator');
 const pool = require('../config/database');
 const { auth } = require('../middleware/auth');
 
-// Debug: verificar variáveis de ambiente
-console.log('[AUTH] Verificando variáveis de ambiente...');
-console.log('[AUTH] JWT_SECRET:', process.env.JWT_SECRET ? 'DEFINIDO' : 'NÃO DEFINIDO');
-console.log('[AUTH] JWT_EXPIRE:', process.env.JWT_EXPIRE || 'não definido (será usado padrão)');
-
-// Validar variáveis de ambiente necessárias
-if (!process.env.JWT_SECRET) {
-  throw new Error('JWT_SECRET não definido nas variáveis de ambiente');
-}
-
 // @route   POST /api/auth/register
 // @desc    Registar novo utilizador
 // @access  Public
@@ -23,10 +13,9 @@ router.post('/register', [
   body('nome').trim().notEmpty().withMessage('Nome é obrigatório'),
   body('email').isEmail().withMessage('Email inválido'),
   body('password').isLength({ min: 6 }).withMessage('Password deve ter pelo menos 6 caracteres'),
-  body('tipo').isIn(['Aluno', 'Professor', 'Funcionário']).withMessage('Tipo de utilizador inválido')
+  body('tipo').isIn(['aluno', 'professor', 'bibliotecario']).withMessage('Tipo de utilizador inválido')
 ], async (req, res) => {
   try {
-    // Validar dados
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -38,7 +27,7 @@ router.post('/register', [
     const { nome, email, password, tipo } = req.body;
 
     // Verificar se email já existe
-    const [existingUser] = await pool.query('SELECT id FROM utilizadores WHERE email = ?', [email]);
+    const [existingUser] = await pool.query('SELECT id_utilizador FROM utilizadores WHERE email = ?', [email]);
     if (existingUser.length > 0) {
       return res.status(400).json({
         success: false,
@@ -56,17 +45,10 @@ router.post('/register', [
     );
 
     // Criar token JWT
-    const jwtSecret = process.env.JWT_SECRET;
-    const jwtExpire = process.env.JWT_EXPIRE || '7d';
-    
-    if (!jwtSecret) {
-      throw new Error('JWT_SECRET não definido nas variáveis de ambiente');
-    }
-    
     const token = jwt.sign(
       { id: result.insertId, email, tipo },
-      jwtSecret,
-      { expiresIn: jwtExpire }
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRE }
     );
 
     res.status(201).json({
@@ -99,7 +81,6 @@ router.post('/login', [
   body('password').notEmpty().withMessage('Password é obrigatória')
 ], async (req, res) => {
   try {
-    // Validar dados
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -110,9 +91,12 @@ router.post('/login', [
 
     const { email, password } = req.body;
 
-    // Procurar utilizador
-    const [users] = await pool.query('SELECT * FROM utilizadores WHERE email = ?', [email]);
-    
+    // Buscar utilizador
+    const [users] = await pool.query(
+      'SELECT id_utilizador, nome, email, password_hash, tipo FROM utilizadores WHERE email = ?',
+      [email]
+    );
+
     if (users.length === 0) {
       return res.status(401).json({
         success: false,
@@ -132,28 +116,23 @@ router.post('/login', [
     }
 
     // Criar token JWT
-    const jwtSecret = process.env.JWT_SECRET;
-    const jwtExpire = process.env.JWT_EXPIRE || '7d';
-    
-    if (!jwtSecret) {
-      throw new Error('JWT_SECRET não definido nas variáveis de ambiente');
-    }
-    
     const token = jwt.sign(
-      { id: user.id, email: user.email, tipo: user.tipo },
-      jwtSecret,
-      { expiresIn: jwtExpire }
+      { id: user.id_utilizador, email: user.email, tipo: user.tipo },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRE }
     );
-
-    // Remover password do objeto user
-    delete user.password_hash;
 
     res.json({
       success: true,
       message: 'Login efetuado com sucesso',
       data: {
         token,
-        user
+        user: {
+          id: user.id_utilizador,
+          nome: user.nome,
+          email: user.email,
+          tipo: user.tipo
+        }
       }
     });
   } catch (error) {
@@ -170,7 +149,10 @@ router.post('/login', [
 // @access  Private
 router.get('/me', auth, async (req, res) => {
   try {
-    const [users] = await pool.query('SELECT id, nome, email, tipo, data_registo FROM utilizadores WHERE id = ?', [req.user.id]);
+    const [users] = await pool.query(
+      'SELECT id_utilizador, nome, email, tipo, data_criacao FROM utilizadores WHERE id_utilizador = ?',
+      [req.user.id]
+    );
     
     if (users.length === 0) {
       return res.status(404).json({
@@ -179,9 +161,16 @@ router.get('/me', auth, async (req, res) => {
       });
     }
 
+    const user = users[0];
     res.json({
       success: true,
-      data: users[0]
+      data: {
+        id: user.id_utilizador,
+        nome: user.nome,
+        email: user.email,
+        tipo: user.tipo,
+        data_criacao: user.data_criacao
+      }
     });
   } catch (error) {
     console.error('Erro ao obter utilizador:', error);
@@ -211,7 +200,11 @@ router.put('/update-password', auth, [
     const { currentPassword, newPassword } = req.body;
 
     // Obter utilizador
-    const [users] = await pool.query('SELECT password FROM utilizadores WHERE id = ?', [req.user.id]);
+    const [users] = await pool.query(
+      'SELECT password_hash FROM utilizadores WHERE id_utilizador = ?',
+      [req.user.id]
+    );
+    
     if (users.length === 0) {
       return res.status(404).json({
         success: false,
@@ -220,7 +213,7 @@ router.put('/update-password', auth, [
     }
 
     // Verificar password atual
-    const isMatch = await bcrypt.compare(currentPassword, users[0].password);
+    const isMatch = await bcrypt.compare(currentPassword, users[0].password_hash);
     if (!isMatch) {
       return res.status(401).json({
         success: false,
@@ -233,7 +226,7 @@ router.put('/update-password', auth, [
 
     // Atualizar password
     await pool.query(
-      'UPDATE utilizadores SET password = ?, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?',
+      'UPDATE utilizadores SET password_hash = ? WHERE id_utilizador = ?',
       [hashedPassword, req.user.id]
     );
 

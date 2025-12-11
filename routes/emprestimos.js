@@ -1,207 +1,338 @@
 const express = require('express');
 const router = express.Router();
-const { body, validationResult } = require('express-validator');
-const db = require('../config/database');
-const { auth, isStaff } = require('../middleware/auth');
+const pool = require('../config/database');
+const { auth, checkRole } = require('../middleware/auth');
+
+// ATENÇÃO: O schema SQL tem erros nos nomes dos campos da tabela emprestimos:
+// - "data_publicacao" é na verdade o ESTADO do empréstimo (enum: 'ativo', 'devolvido', 'atrasado')
+// - "total_copias" é na verdade o valor da MULTA (DECIMAL)
 
 // @route   GET /api/emprestimos
+// @desc    Listar empréstimos
+// @access  Private
 router.get('/', auth, async (req, res) => {
   try {
-    let sql, params;
+    let query = `
+      SELECT e.*, 
+             l.titulo, l.autor,
+             u.nome as nome_utilizador, u.email
+      FROM emprestimos e
+      JOIN livros l ON e.id_livro = l.id_livro
+      JOIN utilizadores u ON e.id_utilizador = u.id_utilizador
+      WHERE 1=1
+    `;
+    const params = [];
 
-    if (req.user.tipo === 'bibliotecario') {
-      sql = `SELECT e.*, u.nome as utilizador_nome, u.email as utilizador_email,
-             l.titulo as livro_titulo, l.autor as livro_autor
-             FROM emprestimos e
-             JOIN utilizadores u ON e.id_utilizador = u.id_utilizador
-             JOIN livros l ON e.id_livro = l.id_livro
-             ORDER BY e.data_emprestimo DESC`;
-      params = [];
-    } else {
-      sql = `SELECT e.*, l.titulo as livro_titulo, l.autor as livro_autor
-             FROM emprestimos e
-             JOIN livros l ON e.id_livro = l.id_livro
-             WHERE e.id_utilizador = ?
-             ORDER BY e.data_emprestimo DESC`;
-      params = [req.user.id];
+    // Se não for bibliotecário, mostrar apenas os seus empréstimos
+    if (req.user.tipo !== 'bibliotecario') {
+      query += ' AND e.id_utilizador = ?';
+      params.push(req.user.id);
     }
 
-    const [emprestimos] = await db.query(sql, params);
-    res.json({ success: true, count: emprestimos.length, data: emprestimos });
+    query += ' ORDER BY e.data_emprestimo DESC';
+
+    const [emprestimos] = await pool.query(query, params);
+
+    res.json({
+      success: true,
+      count: emprestimos.length,
+      data: emprestimos
+    });
   } catch (error) {
-    console.error('Erro:', error);
-    res.status(500).json({ success: false, message: 'Erro ao listar empréstimos' });
+    console.error('Erro ao listar empréstimos:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao listar empréstimos'
+    });
   }
 });
 
-// @route   GET /api/emprestimos/ativos
-router.get('/ativos', auth, async (req, res) => {
+// @route   GET /api/emprestimos/:id
+// @desc    Obter detalhes de um empréstimo específico
+// @access  Private
+router.get('/:id', auth, async (req, res) => {
   try {
-    const [emprestimos] = await db.query(`
-      SELECT e.*, l.titulo as livro_titulo, l.autor as livro_autor, l.categoria as livro_categoria
-      FROM emprestimos e
-      JOIN livros l ON e.id_livro = l.id_livro
-      WHERE e.id_utilizador = ? AND e.estado = 'ativo'
-      ORDER BY e.data_devolucao_prevista ASC
-    `, [req.user.id]);
+    const [emprestimos] = await pool.query(
+      `SELECT e.*, 
+              l.titulo, l.autor, l.isbn as isbn_livro, l.categoria as categoria_livro,
+              u.nome as nome_utilizador, u.email
+       FROM emprestimos e
+       JOIN livros l ON e.id_livro = l.id_livro
+       JOIN utilizadores u ON e.id_utilizador = u.id_utilizador
+       WHERE e.id_emprestimo = ?`,
+      [req.params.id]
+    );
 
-    res.json({ success: true, count: emprestimos.length, data: emprestimos });
+    if (emprestimos.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Empréstimo não encontrado'
+      });
+    }
+
+    const emprestimo = emprestimos[0];
+
+    // Verificar permissões
+    if (req.user.tipo !== 'bibliotecario' && emprestimo.id_utilizador !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Acesso negado'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: emprestimo
+    });
   } catch (error) {
-    console.error('Erro:', error);
-    res.status(500).json({ success: false, message: 'Erro ao listar empréstimos' });
-  }
-});
-
-// @route   GET /api/emprestimos/historico
-router.get('/historico', auth, async (req, res) => {
-  try {
-    const [emprestimos] = await db.query(`
-      SELECT e.*, l.titulo as livro_titulo, l.autor as livro_autor
-      FROM emprestimos e
-      JOIN livros l ON e.id_livro = l.id_livro
-      WHERE e.id_utilizador = ? AND e.estado = 'devolvido'
-      ORDER BY e.data_emprestimo DESC
-    `, [req.user.id]);
-
-    res.json({ success: true, count: emprestimos.length, data: emprestimos });
-  } catch (error) {
-    console.error('Erro:', error);
-    res.status(500).json({ success: false, message: 'Erro ao obter histórico' });
+    console.error('Erro ao obter empréstimo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao obter detalhes do empréstimo'
+    });
   }
 });
 
 // @route   POST /api/emprestimos
-router.post('/', [auth, isStaff], [
-  body('id_utilizador').isInt(),
-  body('id_livro').isInt(),
-  body('dias').optional().isInt({ min: 1, max: 30 })
-], async (req, res) => {
+// @desc    Criar novo empréstimo
+// @access  Private (Bibliotecário apenas)
+router.post('/', auth, checkRole(['bibliotecario']), async (req, res) => {
+  const connection = await pool.getConnection();
+  
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: errors.array() });
+    const { id_utilizador, id_livro } = req.body;
+
+    if (!id_utilizador || !id_livro) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID do utilizador e do livro são obrigatórios'
+      });
     }
 
-    const { id_utilizador, id_livro, dias = 14 } = req.body;
+    await connection.beginTransaction();
 
-    const [utilizadores] = await db.query('SELECT id_utilizador FROM utilizadores WHERE id_utilizador = ?', [id_utilizador]);
-    if (utilizadores.length === 0) {
-      return res.status(404).json({ success: false, message: 'Utilizador não encontrado' });
-    }
+    // Verificar se livro existe e está disponível
+    const [livros] = await connection.query(
+      'SELECT * FROM livros WHERE id_livro = ?',
+      [id_livro]
+    );
 
-    const [livros] = await db.query('SELECT * FROM livros WHERE id_livro = ?', [id_livro]);
     if (livros.length === 0) {
-      return res.status(404).json({ success: false, message: 'Livro não encontrado' });
+      await connection.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Livro não encontrado'
+      });
     }
 
     const livro = livros[0];
-    if (livro.copias_disponiveis <= 0) {
-      return res.status(400).json({ success: false, message: 'Livro não disponível' });
+
+    if (livro.copias_disponiveis < 1) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Não há cópias disponíveis deste livro'
+      });
     }
 
-    const [emprestimoExistente] = await db.query(
-      'SELECT id_emprestimo FROM emprestimos WHERE id_utilizador = ? AND id_livro = ? AND estado = ?',
+    // Verificar se utilizador já tem este livro emprestado
+    const [emprestimoExistente] = await connection.query(
+      'SELECT id_emprestimo FROM emprestimos WHERE id_utilizador = ? AND id_livro = ? AND data_publicacao = ?',
       [id_utilizador, id_livro, 'ativo']
     );
 
     if (emprestimoExistente.length > 0) {
-      return res.status(400).json({ success: false, message: 'Empréstimo ativo já existe' });
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Utilizador já tem este livro emprestado'
+      });
     }
 
-    const dataEmprestimo = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    // Calcular data de devolução prevista (14 dias)
     const dataDevolucao = new Date();
-    dataDevolucao.setDate(dataDevolucao.getDate() + dias);
-    const dataDevolucaoPrevista = dataDevolucao.toISOString().slice(0, 19).replace('T', ' ');
+    dataDevolucao.setDate(dataDevolucao.getDate() + 14);
 
-    const [result] = await db.query(
-      'INSERT INTO emprestimos (id_utilizador, id_livro, isbn, categoria, descricao, data_emprestimo, data_devolucao_prevista, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id_utilizador, id_livro, livro.isbn, livro.categoria, livro.descricao, dataEmprestimo, dataDevolucaoPrevista, 'ativo']
+    // Criar empréstimo
+    const [result] = await connection.query(
+      `INSERT INTO emprestimos (id_utilizador, id_livro, isbn, categoria, descricao, data_devolucao_prevista, data_publicacao, total_copias)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id_utilizador, id_livro, livro.isbn, livro.categoria, livro.descricao, dataDevolucao, 'ativo', 0.00]
     );
 
-    await db.query('UPDATE livros SET copias_disponiveis = copias_disponiveis - 1 WHERE id_livro = ?', [id_livro]);
-    await db.query('UPDATE reservas SET estado = ? WHERE id_utilizador = ? AND id_livro = ? AND estado = ?',
-      ['confirmada', id_utilizador, id_livro, 'pendente']
+    // Atualizar cópias disponíveis
+    await connection.query(
+      'UPDATE livros SET copias_disponiveis = copias_disponiveis - 1 WHERE id_livro = ?',
+      [id_livro]
     );
 
-    const [novoEmprestimo] = await db.query(`
-      SELECT e.*, u.nome as utilizador_nome, u.email as utilizador_email,
-             l.titulo as livro_titulo, l.autor as livro_autor
-      FROM emprestimos e
-      JOIN utilizadores u ON e.id_utilizador = u.id_utilizador
-      JOIN livros l ON e.id_livro = l.id_livro
-      WHERE e.id_emprestimo = ?
-    `, [result.insertId]);
+    // Cancelar reservas do utilizador para este livro
+    await connection.query(
+      'UPDATE reservas SET estado = ? WHERE id_utilizador = ? AND id_livro = ? AND estado = ?',
+      ['cancelada', id_utilizador, id_livro, 'pendente']
+    );
 
-    res.status(201).json({ success: true, message: 'Empréstimo criado com sucesso', data: novoEmprestimo[0] });
+    await connection.commit();
+
+    res.status(201).json({
+      success: true,
+      message: 'Empréstimo criado com sucesso',
+      data: {
+        id_emprestimo: result.insertId,
+        id_utilizador,
+        id_livro,
+        data_devolucao_prevista: dataDevolucao,
+        estado: 'ativo'
+      }
+    });
   } catch (error) {
-    console.error('Erro:', error);
-    res.status(500).json({ success: false, message: 'Erro ao criar empréstimo' });
+    await connection.rollback();
+    console.error('Erro ao criar empréstimo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao criar empréstimo'
+    });
+  } finally {
+    connection.release();
   }
 });
 
 // @route   PUT /api/emprestimos/:id/devolver
-router.put('/:id/devolver', [auth, isStaff], async (req, res) => {
+// @desc    Devolver livro emprestado
+// @access  Private (Bibliotecário apenas)
+router.put('/:id/devolver', auth, checkRole(['bibliotecario']), async (req, res) => {
+  const connection = await pool.getConnection();
+  
   try {
-    const { id } = req.params;
+    await connection.beginTransaction();
 
-    const [emprestimos] = await db.query('SELECT * FROM emprestimos WHERE id_emprestimo = ?', [id]);
+    // Verificar se empréstimo existe e está ativo
+    const [emprestimos] = await connection.query(
+      'SELECT * FROM emprestimos WHERE id_emprestimo = ?',
+      [req.params.id]
+    );
+
     if (emprestimos.length === 0) {
-      return res.status(404).json({ success: false, message: 'Empréstimo não encontrado' });
+      await connection.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Empréstimo não encontrado'
+      });
     }
 
     const emprestimo = emprestimos[0];
 
-    if (emprestimo.estado !== 'ativo' && emprestimo.estado !== 'atrasado') {
-      return res.status(400).json({ success: false, message: 'Empréstimo já foi devolvido' });
+    // ATENÇÃO: "data_publicacao" é o ESTADO
+    if (emprestimo.data_publicacao !== 'ativo') {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Este empréstimo já foi devolvido'
+      });
     }
 
-    await db.query('UPDATE emprestimos SET estado = ? WHERE id_emprestimo = ?', ['devolvido', id]);
-    await db.query('UPDATE livros SET copias_disponiveis = copias_disponiveis + 1 WHERE id_livro = ?', [emprestimo.id_livro]);
+    // Calcular multa se houver atraso
+    const dataAtual = new Date();
+    const dataDevPrevista = new Date(emprestimo.data_devolucao_prevista);
+    let multa = 0;
 
-    res.json({ success: true, message: 'Devolução registada com sucesso' });
+    if (dataAtual > dataDevPrevista) {
+      const diasAtraso = Math.ceil((dataAtual - dataDevPrevista) / (1000 * 60 * 60 * 24));
+      multa = diasAtraso * 0.50; // 0.50€ por dia de atraso
+    }
+
+    // Atualizar empréstimo - ATENÇÃO: "data_publicacao" é o ESTADO e "total_copias" é a MULTA
+    await connection.query(
+      'UPDATE emprestimos SET data_publicacao = ?, total_copias = ? WHERE id_emprestimo = ?',
+      ['devolvido', multa, req.params.id]
+    );
+
+    // Atualizar cópias disponíveis
+    await connection.query(
+      'UPDATE livros SET copias_disponiveis = copias_disponiveis + 1 WHERE id_livro = ?',
+      [emprestimo.id_livro]
+    );
+
+    await connection.commit();
+
+    res.json({
+      success: true,
+      message: 'Livro devolvido com sucesso',
+      data: {
+        multa: multa > 0 ? multa : 0
+      }
+    });
   } catch (error) {
-    console.error('Erro:', error);
-    res.status(500).json({ success: false, message: 'Erro ao registar devolução' });
+    await connection.rollback();
+    console.error('Erro ao devolver livro:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao devolver livro'
+    });
+  } finally {
+    connection.release();
   }
 });
 
 // @route   PUT /api/emprestimos/:id/renovar
-router.put('/:id/renovar', auth, [
-  body('dias').optional().isInt({ min: 1, max: 14 })
-], async (req, res) => {
+// @desc    Renovar empréstimo
+// @access  Private
+router.put('/:id/renovar', auth, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { dias = 14 } = req.body;
+    // Verificar se empréstimo existe
+    const [emprestimos] = await pool.query(
+      'SELECT * FROM emprestimos WHERE id_emprestimo = ?',
+      [req.params.id]
+    );
 
-    const [emprestimos] = await db.query('SELECT * FROM emprestimos WHERE id_emprestimo = ?', [id]);
     if (emprestimos.length === 0) {
-      return res.status(404).json({ success: false, message: 'Empréstimo não encontrado' });
+      return res.status(404).json({
+        success: false,
+        message: 'Empréstimo não encontrado'
+      });
     }
 
     const emprestimo = emprestimos[0];
 
+    // Verificar permissões
     if (req.user.tipo !== 'bibliotecario' && emprestimo.id_utilizador !== req.user.id) {
-      return res.status(403).json({ success: false, message: 'Sem permissão' });
+      return res.status(403).json({
+        success: false,
+        message: 'Acesso negado'
+      });
     }
 
-    if (emprestimo.estado !== 'ativo') {
-      return res.status(400).json({ success: false, message: 'Apenas empréstimos ativos podem ser renovados' });
+    // ATENÇÃO: "data_publicacao" é o ESTADO
+    if (emprestimo.data_publicacao !== 'ativo') {
+      return res.status(400).json({
+        success: false,
+        message: 'Apenas empréstimos ativos podem ser renovados'
+      });
     }
 
+    // Calcular nova data de devolução (+14 dias a partir de hoje)
     const novaDataDevolucao = new Date();
-    novaDataDevolucao.setDate(novaDataDevolucao.getDate() + dias);
-    const dataDevolucaoPrevista = novaDataDevolucao.toISOString().slice(0, 19).replace('T', ' ');
+    novaDataDevolucao.setDate(novaDataDevolucao.getDate() + 14);
 
-    await db.query('UPDATE emprestimos SET data_devolucao_prevista = ? WHERE id_emprestimo = ?', [dataDevolucaoPrevista, id]);
+    // Atualizar data de devolução
+    await pool.query(
+      'UPDATE emprestimos SET data_devolucao_prevista = ? WHERE id_emprestimo = ?',
+      [novaDataDevolucao, req.params.id]
+    );
 
     res.json({
       success: true,
       message: 'Empréstimo renovado com sucesso',
-      data: { nova_data_devolucao: dataDevolucaoPrevista }
+      data: {
+        nova_data_devolucao: novaDataDevolucao
+      }
     });
   } catch (error) {
-    console.error('Erro:', error);
-    res.status(500).json({ success: false, message: 'Erro ao renovar empréstimo' });
+    console.error('Erro ao renovar empréstimo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao renovar empréstimo'
+    });
   }
 });
 
