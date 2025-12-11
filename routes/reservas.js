@@ -1,151 +1,85 @@
 const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
-const db = require('../config/database');
-const { auth, isStaff } = require('../middleware/auth');
-
-// Função auxiliar para executar queries
-const query = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
-};
-
-const queryRun = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function(err) {
-      if (err) reject(err);
-      else resolve({ id: this.lastID, changes: this.changes });
-    });
-  });
-};
-
-// Função auxiliar para calcular data de expiração (7 dias)
-const calcularDataExpiracao = () => {
-  const data = new Date();
-  data.setDate(data.getDate() + 7);
-  return data.toLocaleDateString('pt-PT');
-};
+const pool = require('../config/database');
+const { auth } = require('../middleware/auth');
 
 // @route   GET /api/reservas
-// @desc    Listar reservas (todas para staff, apenas do utilizador para outros)
+// @desc    Obter todas as reservas (admin) ou do utilizador autenticado
 // @access  Private
 router.get('/', auth, async (req, res) => {
   try {
-    let sql;
-    let params;
-
-    if (req.user.tipo === 'Admin' || req.user.tipo === 'Funcionário') {
-      // Staff pode ver todas as reservas
-      sql = `
-        SELECT r.*, 
-               u.nome as utilizador_nome, 
-               u.email as utilizador_email,
-               l.titulo as livro_titulo,
-               l.autor as livro_autor
-        FROM reservas r
-        JOIN utilizadores u ON r.utilizador_id = u.id
-        JOIN livros l ON r.livro_id = l.id
-        ORDER BY r.criado_em DESC
-      `;
-      params = [];
-    } else {
-      // Utilizadores normais veem apenas suas reservas
-      sql = `
-        SELECT r.*,
-               l.titulo as livro_titulo,
-               l.autor as livro_autor
-        FROM reservas r
-        JOIN livros l ON r.livro_id = l.id
-        WHERE r.utilizador_id = ?
-        ORDER BY r.criado_em DESC
-      `;
-      params = [req.user.id];
-    }
-
-    const reservas = await query(sql, params);
-
-    res.json({
-      success: true,
-      count: reservas.length,
-      data: reservas
-    });
-  } catch (error) {
-    console.error('Erro ao listar reservas:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao listar reservas'
-    });
-  }
-});
-
-// @route   GET /api/reservas/minhas
-// @desc    Listar reservas ativas do utilizador atual
-// @access  Private
-router.get('/minhas', auth, async (req, res) => {
-  try {
-    const reservas = await query(`
-      SELECT r.*,
-             l.titulo as livro_titulo,
+    let sql = `
+      SELECT r.*, 
+             l.titulo as livro_titulo, 
              l.autor as livro_autor,
-             l.categoria as livro_categoria
+             u.nome as utilizador_nome, 
+             u.email as utilizador_email
       FROM reservas r
       JOIN livros l ON r.livro_id = l.id
-      WHERE r.utilizador_id = ? AND r.status = 'ativa'
-      ORDER BY r.data_expiracao ASC
-    `, [req.user.id]);
-
+      JOIN utilizadores u ON r.utilizador_id = u.id
+    `;
+    
+    const params = [];
+    
+    // Se não for administrador, mostrar apenas as suas reservas
+    if (req.user.tipo !== 'Administrador') {
+      sql += ' WHERE r.utilizador_id = ?';
+      params.push(req.user.id);
+    }
+    
+    sql += ' ORDER BY r.criado_em DESC';
+    
+    const [reservas] = await pool.query(sql, params);
+    
     res.json({
       success: true,
       count: reservas.length,
       data: reservas
     });
   } catch (error) {
-    console.error('Erro ao listar reservas:', error);
+    console.error('Erro ao obter reservas:', error);
     res.status(500).json({
       success: false,
-      message: 'Erro ao listar suas reservas'
+      message: 'Erro ao obter reservas'
     });
   }
 });
 
 // @route   GET /api/reservas/:id
-// @desc    Obter detalhes de uma reserva
+// @desc    Obter reserva por ID
 // @access  Private
 router.get('/:id', auth, async (req, res) => {
   try {
-    const reservas = await query(`
-      SELECT r.*,
-             u.nome as utilizador_nome,
-             u.email as utilizador_email,
-             l.titulo as livro_titulo,
-             l.autor as livro_autor
+    const [reservas] = await pool.query(`
+      SELECT r.*, 
+             l.titulo as livro_titulo, 
+             l.autor as livro_autor,
+             u.nome as utilizador_nome, 
+             u.email as utilizador_email
       FROM reservas r
-      JOIN utilizadores u ON r.utilizador_id = u.id
-      JOIN livros l ON r.livro_id = l.id
-      WHERE r.id = ?
+      JOIN livros l ON r.id_livro = l.id_livro
+      JOIN utilizadores u ON r.id_utilizador = u.id_utilizador
+      WHERE r.id_reserva = ?
     `, [req.params.id]);
-
+    
     if (reservas.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Reserva não encontrada'
       });
     }
-
+    
     const reserva = reservas[0];
-
-    // Verificar se o utilizador tem permissão para ver esta reserva
-    if (req.user.tipo !== 'Admin' && req.user.tipo !== 'Funcionário' && reserva.utilizador_id !== req.user.id) {
+    
+    // Verificar permissões
+    if (req.user.tipo !== 'Administrador' && reserva.utilizador_id !== req.user.id) {
       return res.status(403).json({
         success: false,
-        message: 'Não tem permissão para ver esta reserva'
+        message: 'Não tem permissão para aceder a esta reserva'
       });
     }
-
+    
     res.json({
       success: true,
       data: reserva
@@ -154,7 +88,7 @@ router.get('/:id', auth, async (req, res) => {
     console.error('Erro ao obter reserva:', error);
     res.status(500).json({
       success: false,
-      message: 'Erro ao obter detalhes da reserva'
+      message: 'Erro ao obter reserva'
     });
   }
 });
@@ -162,8 +96,9 @@ router.get('/:id', auth, async (req, res) => {
 // @route   POST /api/reservas
 // @desc    Criar nova reserva
 // @access  Private
-router.post('/', auth, [
-  body('livro_id').isInt().withMessage('ID do livro é obrigatório')
+router.post('/', [
+  auth,
+  body('livro_id').isInt({ min: 1 }).withMessage('ID do livro inválido')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -177,8 +112,8 @@ router.post('/', auth, [
     const { livro_id } = req.body;
     const utilizador_id = req.user.id;
 
-    // Verificar se o livro existe e está disponível
-    const livros = await query('SELECT * FROM livros WHERE id = ?', [livro_id]);
+    // Verificar se o livro existe
+    const [livros] = await pool.query('SELECT * FROM livros WHERE id = ?', [livro_id]);
     if (livros.length === 0) {
       return res.status(404).json({
         success: false,
@@ -187,67 +122,60 @@ router.post('/', auth, [
     }
 
     const livro = livros[0];
-    if (livro.quantidade_disponivel <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Livro não disponível para reserva'
-      });
-    }
 
     // Verificar se o utilizador já tem uma reserva ativa para este livro
-    const reservaExistente = await query(
-      'SELECT id FROM reservas WHERE utilizador_id = ? AND livro_id = ? AND status = ?',
-      [utilizador_id, livro_id, 'ativa']
+    const [existingReservation] = await pool.query(
+      'SELECT id FROM reservas WHERE utilizador_id = ? AND livro_id = ? AND estado = "ativa"',
+      [utilizador_id, livro_id]
     );
 
-    if (reservaExistente.length > 0) {
+    if (existingReservation.length > 0) {
       return res.status(400).json({
         success: false,
         message: 'Já tem uma reserva ativa para este livro'
       });
     }
 
-    // Verificar se o utilizador tem empréstimo ativo deste livro
-    const emprestimoAtivo = await query(
-      'SELECT id FROM emprestimos WHERE utilizador_id = ? AND livro_id = ? AND status = ?',
-      [utilizador_id, livro_id, 'ativo']
+    // Verificar se o utilizador já tem um empréstimo ativo para este livro
+    const [existingLoan] = await pool.query(
+      'SELECT id FROM emprestimos WHERE utilizador_id = ? AND livro_id = ? AND estado = "ativo"',
+      [utilizador_id, livro_id]
     );
 
-    if (emprestimoAtivo.length > 0) {
+    if (existingLoan.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Já tem um empréstimo ativo deste livro'
+        message: 'Já tem um empréstimo ativo para este livro'
       });
     }
 
+    // Calcular data de expiração (7 dias a partir de hoje)
+    const dataExpiracao = new Date();
+    dataExpiracao.setDate(dataExpiracao.getDate() + 7);
+
     // Criar reserva
-    const dataReserva = new Date().toLocaleDateString('pt-PT');
-    const dataExpiracao = calcularDataExpiracao();
-
-    const result = await queryRun(
-      'INSERT INTO reservas (utilizador_id, livro_id, data_reserva, data_expiracao, status) VALUES (?, ?, ?, ?, ?)',
-      [utilizador_id, livro_id, dataReserva, dataExpiracao, 'ativa']
+    const [result] = await pool.query(
+      'INSERT INTO reservas (utilizador_id, livro_id, data_expiracao) VALUES (?, ?, ?)',
+      [utilizador_id, livro_id, dataExpiracao.toISOString().split('T')[0]]
     );
 
-    // Atualizar quantidade disponível do livro
-    await queryRun(
-      'UPDATE livros SET quantidade_disponivel = quantidade_disponivel - 1, disponivel = CASE WHEN quantidade_disponivel - 1 > 0 THEN 1 ELSE 0 END, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?',
-      [livro_id]
-    );
-
-    const novaReserva = await query(`
-      SELECT r.*,
-             l.titulo as livro_titulo,
-             l.autor as livro_autor
+    // Obter a reserva criada
+    const [newReservation] = await pool.query(`
+      SELECT r.*, 
+             l.titulo as livro_titulo, 
+             l.autor as livro_autor,
+             u.nome as utilizador_nome, 
+             u.email as utilizador_email
       FROM reservas r
       JOIN livros l ON r.livro_id = l.id
+      JOIN utilizadores u ON r.utilizador_id = u.id
       WHERE r.id = ?
-    `, [result.id]);
+    `, [result.insertId]);
 
     res.status(201).json({
       success: true,
       message: 'Reserva criada com sucesso',
-      data: novaReserva[0]
+      data: newReservation[0]
     });
   } catch (error) {
     console.error('Erro ao criar reserva:', error);
@@ -263,100 +191,62 @@ router.post('/', auth, [
 // @access  Private
 router.put('/:id/cancelar', auth, async (req, res) => {
   try {
-    const { id } = req.params;
-
-    // Obter reserva
-    const reservas = await query('SELECT * FROM reservas WHERE id = ?', [id]);
-    if (reservas.length === 0) {
+    // Verificar se reserva existe
+    const [existingReservation] = await pool.query('SELECT * FROM reservas WHERE id = ?', [req.params.id]);
+    if (existingReservation.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Reserva não encontrada'
       });
     }
 
-    const reserva = reservas[0];
+    const reserva = existingReservation[0];
 
     // Verificar permissões
-    if (req.user.tipo !== 'Admin' && req.user.tipo !== 'Funcionário' && reserva.utilizador_id !== req.user.id) {
+    if (req.user.tipo !== 'Administrador' && reserva.utilizador_id !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: 'Não tem permissão para cancelar esta reserva'
       });
     }
 
-    // Verificar se a reserva está ativa
-    if (reserva.status !== 'ativa') {
+    // Verificar se a reserva já foi cancelada ou concluída
+    if (reserva.estado !== 'ativa') {
       return res.status(400).json({
         success: false,
-        message: 'Esta reserva já não está ativa'
+        message: `Esta reserva já foi ${reserva.estado === 'cancelada' ? 'cancelada' : 'concluída'}`
       });
     }
 
     // Cancelar reserva
-    await queryRun(
-      'UPDATE reservas SET status = ?, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?',
-      ['cancelada', id]
+    await pool.query(
+      'UPDATE reservas SET estado = "cancelada", atualizado_em = CURRENT_TIMESTAMP WHERE id = ?',
+      [req.params.id]
     );
 
-    // Devolver disponibilidade ao livro
-    await queryRun(
-      'UPDATE livros SET quantidade_disponivel = quantidade_disponivel + 1, disponivel = 1, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?',
-      [reserva.livro_id]
-    );
+    // Obter reserva atualizada
+    const [updatedReservation] = await pool.query(`
+      SELECT r.*, 
+             l.titulo as livro_titulo, 
+             l.autor as livro_autor,
+             u.nome as utilizador_nome, 
+             u.email as utilizador_email
+      FROM reservas r
+      JOIN livros l ON r.livro_id = l.id
+      JOIN utilizadores u ON r.utilizador_id = u.id
+      WHERE r.id = ?
+    `, [req.params.id]);
 
     res.json({
       success: true,
-      message: 'Reserva cancelada com sucesso'
+      message: 'Reserva cancelada com sucesso',
+      data: updatedReservation[0]
     });
   } catch (error) {
     console.error('Erro ao cancelar reserva:', error);
     res.status(500).json({
       success: false,
       message: 'Erro ao cancelar reserva'
-    });
-  }
-});
-
-// @route   PUT /api/reservas/:id/completar
-// @desc    Marcar reserva como completada (quando livro é levantado)
-// @access  Private (Staff)
-router.put('/:id/completar', [auth, isStaff], async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    // Obter reserva
-    const reservas = await query('SELECT * FROM reservas WHERE id = ?', [id]);
-    if (reservas.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Reserva não encontrada'
-      });
-    }
-
-    const reserva = reservas[0];
-
-    if (reserva.status !== 'ativa') {
-      return res.status(400).json({
-        success: false,
-        message: 'Esta reserva não está ativa'
-      });
-    }
-
-    // Completar reserva
-    await queryRun(
-      'UPDATE reservas SET status = ?, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?',
-      ['completada', id]
-    );
-
-    res.json({
-      success: true,
-      message: 'Reserva completada com sucesso'
-    });
-  } catch (error) {
-    console.error('Erro ao completar reserva:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao completar reserva'
     });
   }
 });

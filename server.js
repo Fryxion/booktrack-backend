@@ -1,7 +1,8 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
 
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 
@@ -23,7 +24,7 @@ app.use('/api/emprestimos', require('./routes/emprestimos'));
 app.get('/api', (req, res) => {
   res.json({
     success: true,
-    message: 'API BookTrack está a funcionar!',
+    message: 'API BookTrack estï¿½ a funcionar!',
     version: '1.0.0',
     endpoints: {
       auth: '/api/auth',

@@ -1,223 +1,420 @@
-# 🚀 Guia de Instalação Rápida - BookTrack Backend
+# 📦 Guia de Instalação - BookTrack Backend (MariaDB)
 
-Este guia irá ajudá-lo a configurar e executar o backend do BookTrack em poucos minutos.
+Este guia contém instruções detalhadas para instalar e configurar o backend do BookTrack com **MariaDB**.
 
-## ✅ Pré-requisitos
+---
 
-Antes de começar, certifique-se de ter instalado:
-- **Node.js** (versão 16 ou superior) - [Download aqui](https://nodejs.org/)
+## 📋 Pré-requisitos
 
-## 📦 Passo 1: Instalar Dependências
+### 1️⃣ Node.js
+- **Versão mínima:** Node.js 16.x ou superior
+- **Download:** https://nodejs.org/
 
-Abra o terminal na pasta `booktrack-backend` e execute:
+### 2️⃣ MariaDB
+- **Versão recomendada:** MariaDB 10.5 ou superior
+- **Download:** https://mariadb.org/download/
+
+---
+
+## 🔧 Instalação do MariaDB
+
+### Windows
+
+1. **Descarregar o instalador:**
+   - Aceda a https://mariadb.org/download/
+   - Escolha a versão mais recente para Windows
+   - Execute o instalador MSI
+
+2. **Durante a instalação:**
+   - Defina uma password para o utilizador `root`
+   - **IMPORTANTE:** Guarde bem esta password!
+   - Deixe as outras opções por defeito
+   - Marque a opção "Enable access from remote machines" se necessário
+
+3. **Verificar instalação:**
+   ```cmd
+   mysql --version
+   ```
+
+### Linux (Ubuntu/Debian)
+
+```bash
+# Atualizar repositórios
+sudo apt update
+
+# Instalar MariaDB
+sudo apt install mariadb-server mariadb-client
+
+# Iniciar serviço
+sudo systemctl start mariadb
+sudo systemctl enable mariadb
+
+# Configurar segurança
+sudo mysql_secure_installation
+```
+
+---
+
+## 🚀 Instalação do Backend
+
+### 1️⃣ Clonar/Descarregar o Projeto
+
+```bash
+cd booktrack-backend
+```
+
+### 2️⃣ Instalar Dependências
 
 ```bash
 npm install
 ```
 
-Este comando irá instalar todas as dependências necessárias:
-- Express (servidor web)
-- SQLite3 (base de dados)
-- bcryptjs (encriptação de passwords)
-- jsonwebtoken (autenticação)
-- E outras bibliotecas auxiliares
+Dependências instaladas:
+- `express` - Framework web
+- `mysql2` - Driver MariaDB/MySQL
+- `cors` - Gestão de CORS
+- `dotenv` - Variáveis de ambiente
+- `bcryptjs` - Encriptação de passwords
+- `jsonwebtoken` - Autenticação JWT
+- `express-validator` - Validação de dados
 
-⏱️ **Tempo estimado**: 1-2 minutos
+### 3️⃣ Configurar MariaDB
 
-## ⚙️ Passo 2: Configurar Variáveis de Ambiente
+**Aceder ao MariaDB:**
+```bash
+mysql -u root -p
+```
+(Introduza a password definida durante a instalação)
 
-1. Copie o ficheiro de exemplo:
+**Criar utilizador para a aplicação (opcional mas recomendado):**
+```sql
+-- Criar utilizador
+CREATE USER 'booktrack_user'@'localhost' IDENTIFIED BY 'booktrack_password_123';
+
+-- Dar permissões
+GRANT ALL PRIVILEGES ON booktrack.* TO 'booktrack_user'@'localhost';
+
+-- Aplicar alterações
+FLUSH PRIVILEGES;
+
+-- Sair
+EXIT;
+```
+
+### 4️⃣ Configurar Variáveis de Ambiente
+
+**Copiar ficheiro de exemplo:**
 ```bash
 cp .env.example .env
 ```
 
-2. **(Opcional)** Edite o ficheiro `.env` se desejar alterar:
-   - Porta do servidor (padrão: 5000)
-   - Chave secreta JWT (importante em produção!)
+**Editar o ficheiro `.env`:**
 
-**Nota**: Para testes locais, os valores padrão já funcionam perfeitamente!
+```env
+# Configuração do Servidor
+PORT=5000
+NODE_ENV=development
 
-## 🗄️ Passo 3: Criar e Popular a Base de Dados
+# Configuração JWT
+JWT_SECRET=booktrack_secret_key_change_this_in_production_2025
+JWT_EXPIRE=7d
 
-### 3.1 Inicializar a Base de Dados
+# Configuração da Base de Dados MariaDB
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=SUA_PASSWORD_AQUI
+DB_NAME=booktrack
+```
 
+⚠️ **IMPORTANTE:** Substitua `SUA_PASSWORD_AQUI` pela password correta!
+
+Se criou um utilizador dedicado:
+```env
+DB_USER=booktrack_user
+DB_PASSWORD=booktrack_password_123
+```
+
+### 5️⃣ Inicializar Base de Dados
+
+**Criar todas as tabelas:**
 ```bash
 npm run init-db
 ```
 
 Este comando irá:
-- ✅ Criar o diretório `database`
-- ✅ Criar o ficheiro `booktrack.db`
+- ✅ Criar a base de dados `booktrack`
 - ✅ Criar todas as tabelas necessárias
-- ✅ Criar índices para melhor performance
+- ✅ Configurar índices e chaves estrangeiras
 
-### 3.2 Popular com Dados de Exemplo
+### 6️⃣ Popular com Dados de Teste
 
 ```bash
 npm run seed-db
 ```
 
-Este comando irá adicionar:
+Este comando adiciona:
 - 👥 4 utilizadores de teste
-- 📚 8 livros portugueses clássicos
-- 📋 2 reservas de exemplo
-- 📖 2 empréstimos no histórico
+- 📚 5 livros portugueses
+- 📖 2 empréstimos ativos
+- 📋 2 reservas pendentes
+- 🔔 2 notificações
 
-**Credenciais de teste criadas:**
-- 👨‍🏫 **Professor**: josesaramago@gmail.com / 123456
-- 👨‍💼 **Admin**: admin@booktrack.pt / 123456
-- 👨‍🎓 **Aluno**: maria.silva@escola.pt / 123456
+### 7️⃣ Iniciar o Servidor
 
-## 🎯 Passo 4: Iniciar o Servidor
-
-### Modo Desenvolvimento (com auto-restart)
+**Modo desenvolvimento (com reinício automático):**
 ```bash
 npm run dev
 ```
 
-### Modo Normal
+**Modo produção:**
 ```bash
 npm start
 ```
 
-Você deverá ver algo como:
+O servidor estará disponível em: **http://localhost:5000**
+
+---
+
+## 👤 Contas de Teste
+
+Todos os utilizadores têm a password: **`123456`**
+
+### Professor
+- **Email:** josesaramago@gmail.com
+- **Tipo:** professor
+
+### Aluno 1
+- **Email:** maria.silva@aluno.pt
+- **Tipo:** aluno
+
+### Aluno 2
+- **Email:** joao.costa@aluno.pt
+- **Tipo:** aluno
+
+### Bibliotecária
+- **Email:** ana.bib@biblioteca.pt
+- **Tipo:** bibliotecario
+- **Permissões:** Gestão completa do sistema
+
+---
+
+## 📚 Estrutura da Base de Dados
+
+### Tabelas Criadas
+
+1. **utilizadores** - Utilizadores do sistema
+2. **livros** - Catálogo de livros
+3. **emprestimos** - Gestão de empréstimos
+4. **reservas** - Gestão de reservas
+5. **notificacoes** - Sistema de notificações
+6. **relatorios** - Relatórios do sistema
+7. **catalogo** - Registo de utilização
+
+### Diagrama de Relações
 
 ```
-╔══════════════════════════════════════════╗
-║                                          ║
-║     🚀 BookTrack API Server              ║
-║                                          ║
-╚══════════════════════════════════════════╝
-
-📍 Servidor a correr em: http://localhost:5000
-🌐 Modo: development
-📚 API disponível em: http://localhost:5000/api
-
-✨ Pronto para receber pedidos!
+utilizadores (1) -----> (N) emprestimos
+utilizadores (1) -----> (N) reservas
+utilizadores (1) -----> (N) notificacoes
+livros (1) -----------> (N) emprestimos
+livros (1) -----------> (N) reservas
 ```
 
-## 🧪 Passo 5: Testar a API
+---
 
-### Opção 1: Navegador
-Abra o navegador e acesse:
-```
-http://localhost:5000/api
-```
+## 🧪 Testar a API
 
-Você deverá ver uma resposta JSON com informações da API.
+### 1. Verificar se o servidor está a funcionar
 
-### Opção 2: cURL (Terminal)
-
-**Teste básico:**
 ```bash
-curl http://localhost:5000/api
+curl http://localhost:5000/api/livros
 ```
 
-**Login de teste:**
+### 2. Fazer login
+
 ```bash
 curl -X POST http://localhost:5000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"josesaramago@gmail.com","password":"123456"}'
 ```
 
-**Listar livros:**
-```bash
-curl http://localhost:5000/api/livros
-```
+### 3. Usar Postman ou Insomnia
 
-### Opção 3: Postman / Insomnia
-Importe as seguintes requisições:
-
-1. **Login**
-   - Method: POST
-   - URL: `http://localhost:5000/api/auth/login`
-   - Body (JSON):
-     ```json
-     {
-       "email": "josesaramago@gmail.com",
-       "password": "123456"
-     }
-     ```
-
-2. **Listar Livros**
-   - Method: GET
-   - URL: `http://localhost:5000/api/livros`
-
-## 📋 Comandos Úteis
-
-| Comando | Descrição |
-|---------|-----------|
-| `npm start` | Inicia o servidor |
-| `npm run dev` | Inicia em modo desenvolvimento |
-| `npm run init-db` | Reinicializa a base de dados (APAGA dados existentes!) |
-| `npm run seed-db` | Adiciona dados de exemplo |
-
-## 🔍 Verificar se Tudo Está a Funcionar
-
-✅ **Checklist:**
-- [ ] Servidor iniciado sem erros
-- [ ] Acesso a `http://localhost:5000/api` retorna JSON
-- [ ] Login com credenciais de teste funciona
-- [ ] Listar livros retorna 8 livros
-
-## ⚠️ Resolução de Problemas
-
-### Erro: "Cannot find module"
-**Solução**: Execute novamente `npm install`
-
-### Erro: "Port 5000 already in use"
-**Solução**: 
-1. Edite o ficheiro `.env`
-2. Altere `PORT=5000` para `PORT=5001` (ou outra porta livre)
-3. Reinicie o servidor
-
-### Erro: "ENOENT: no such file or directory"
-**Solução**: Certifique-se de estar na pasta correta:
-```bash
-cd booktrack-backend
-```
-
-### Base de dados corrompida
-**Solução**: Reinicialize a base de dados:
-```bash
-npm run init-db
-npm run seed-db
-```
-
-## 🎉 Próximos Passos
-
-Agora que o backend está funcionando:
-
-1. ✅ Teste os diferentes endpoints (ver README.md completo)
-2. 🔗 Configure o frontend React para conectar à API
-3. 📝 Explore a documentação completa no README.md
-4. 🛠️ Comece a desenvolver suas próprias features!
-
-## 📚 Documentação Completa
-
-Para informações detalhadas sobre:
-- Todos os endpoints disponíveis
-- Estrutura da base de dados
-- Tipos de utilizadores e permissões
-- Exemplos de requisições
-
-Consulte o **README.md** completo na raiz do projeto.
-
-## 💡 Dicas
-
-- Use `npm run dev` durante o desenvolvimento para o servidor reiniciar automaticamente
-- Mantenha o terminal aberto para ver os logs das requisições
-- Use Postman ou Insomnia para testar a API de forma mais fácil
-- Consulte os logs do servidor se algo não funcionar como esperado
-
-## 🆘 Precisa de Ajuda?
-
-Se encontrar algum problema:
-1. Verifique os logs do servidor no terminal
-2. Consulte a seção de "Resolução de Problemas" acima
-3. Revise o README.md completo
-4. Verifique se todas as dependências foram instaladas
+Importe os endpoints disponíveis em `README.md`
 
 ---
 
-**Boa sorte com o desenvolvimento! 🚀📚**
+## 🔍 Verificar Base de Dados
+
+**Aceder ao MariaDB:**
+```bash
+mysql -u root -p booktrack
+```
+
+**Comandos úteis:**
+```sql
+-- Ver todas as tabelas
+SHOW TABLES;
+
+-- Ver estrutura de uma tabela
+DESCRIBE utilizadores;
+
+-- Contar registos
+SELECT COUNT(*) FROM livros;
+
+-- Ver livros disponíveis
+SELECT titulo, autor, copias_disponiveis FROM livros;
+
+-- Ver empréstimos ativos
+SELECT e.*, u.nome, l.titulo 
+FROM emprestimos e
+JOIN utilizadores u ON e.id_utilizador = u.id_utilizador
+JOIN livros l ON e.id_livro = l.id_livro
+WHERE e.estado = 'ativo';
+```
+
+---
+
+## 🛠️ Resolução de Problemas
+
+### ❌ Erro: "Access denied for user"
+
+**Problema:** Password incorreta ou utilizador sem permissões
+
+**Solução:**
+```bash
+# Reiniciar serviço MariaDB
+sudo systemctl restart mariadb  # Linux
+brew services restart mariadb   # macOS
+net stop MariaDB                # Windows (cmd como admin)
+net start MariaDB               # Windows (cmd como admin)
+
+# Ou redefina a password do root
+```
+
+### ❌ Erro: "Cannot connect to MySQL"
+
+**Verificar se o serviço está a correr:**
+```bash
+# Linux
+sudo systemctl status mariadb
+
+# macOS
+brew services list
+
+# Windows
+sc query MariaDB
+```
+
+### ❌ Erro: "ER_DBACCESS_DENIED_ERROR"
+
+**Problema:** Utilizador sem permissões na base de dados
+
+**Solução:**
+```sql
+GRANT ALL PRIVILEGES ON booktrack.* TO 'seu_usuario'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+### ❌ Erro: "Port 5000 already in use"
+
+**Mudar a porta no `.env`:**
+```env
+PORT=5001
+```
+
+### ❌ Erro durante "npm install"
+
+```bash
+# Limpar cache do npm
+npm cache clean --force
+
+# Apagar node_modules e reinstalar
+rm -rf node_modules package-lock.json
+npm install
+```
+
+---
+
+## 🔄 Reiniciar Base de Dados
+
+Se precisar de limpar tudo e recomeçar:
+
+```bash
+# 1. Reinicializar (apaga e recria)
+npm run init-db
+
+# 2. Popular novamente
+npm run seed-db
+```
+
+Ou manualmente no MariaDB:
+```sql
+DROP DATABASE IF EXISTS booktrack;
+```
+
+Depois execute `npm run init-db` novamente.
+
+---
+
+## 📊 Gestão do MariaDB
+
+### Fazer Backup
+
+```bash
+mysqldump -u root -p booktrack > backup_booktrack.sql
+```
+
+### Restaurar Backup
+
+```bash
+mysql -u root -p booktrack < backup_booktrack.sql
+```
+
+### Ver Utilizadores
+
+```sql
+SELECT User, Host FROM mysql.user;
+```
+
+### Ver Bases de Dados
+
+```sql
+SHOW DATABASES;
+```
+
+---
+
+## 🌐 Preparar para Produção
+
+1. **Alterar JWT_SECRET** no `.env` para uma chave segura
+2. **Criar utilizador dedicado** para a aplicação (não usar root)
+3. **Configurar firewall** para proteger a porta 3306
+4. **Ativar SSL/TLS** para conexões à base de dados
+5. **Fazer backups regulares**
+6. **Usar variáveis de ambiente** seguras (nunca commit .env)
+
+---
+
+## 📞 Suporte
+
+Se encontrar problemas:
+1. Verifique os logs do servidor
+2. Verifique os logs do MariaDB
+3. Consulte a documentação oficial do MariaDB
+
+---
+
+## ✅ Checklist Final
+
+- [ ] MariaDB instalado e a correr
+- [ ] Base de dados `booktrack` criada
+- [ ] Ficheiro `.env` configurado corretamente
+- [ ] Dependências instaladas (`npm install`)
+- [ ] Tabelas criadas (`npm run init-db`)
+- [ ] Dados de teste inseridos (`npm run seed-db`)
+- [ ] Servidor a correr (`npm run dev`)
+- [ ] API a responder (`curl http://localhost:5000/api/livros`)
+
+🎉 **Parabéns! O backend está pronto para usar!**

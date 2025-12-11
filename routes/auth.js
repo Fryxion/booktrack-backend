@@ -3,27 +3,18 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
-const db = require('../config/database');
+const pool = require('../config/database');
 const { auth } = require('../middleware/auth');
 
-// Função auxiliar para executar queries
-const query = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
-};
+// Debug: verificar variáveis de ambiente
+console.log('[AUTH] Verificando variáveis de ambiente...');
+console.log('[AUTH] JWT_SECRET:', process.env.JWT_SECRET ? 'DEFINIDO' : 'NÃO DEFINIDO');
+console.log('[AUTH] JWT_EXPIRE:', process.env.JWT_EXPIRE || 'não definido (será usado padrão)');
 
-const queryRun = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function(err) {
-      if (err) reject(err);
-      else resolve({ id: this.lastID, changes: this.changes });
-    });
-  });
-};
+// Validar variáveis de ambiente necessárias
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET não definido nas variáveis de ambiente');
+}
 
 // @route   POST /api/auth/register
 // @desc    Registar novo utilizador
@@ -47,7 +38,7 @@ router.post('/register', [
     const { nome, email, password, tipo } = req.body;
 
     // Verificar se email já existe
-    const existingUser = await query('SELECT id FROM utilizadores WHERE email = ?', [email]);
+    const [existingUser] = await pool.query('SELECT id FROM utilizadores WHERE email = ?', [email]);
     if (existingUser.length > 0) {
       return res.status(400).json({
         success: false,
@@ -58,20 +49,24 @@ router.post('/register', [
     // Encriptar password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Data atual
-    const dataRegisto = new Date().toLocaleDateString('pt-PT');
-
     // Inserir utilizador
-    const result = await queryRun(
-      'INSERT INTO utilizadores (nome, email, password, tipo, data_registo) VALUES (?, ?, ?, ?, ?)',
-      [nome, email, hashedPassword, tipo, dataRegisto]
+    const [result] = await pool.query(
+      'INSERT INTO utilizadores (nome, email, password_hash, tipo) VALUES (?, ?, ?, ?)',
+      [nome, email, hashedPassword, tipo]
     );
 
     // Criar token JWT
+    const jwtSecret = process.env.JWT_SECRET;
+    const jwtExpire = process.env.JWT_EXPIRE || '7d';
+    
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET não definido nas variáveis de ambiente');
+    }
+    
     const token = jwt.sign(
-      { id: result.id, email, tipo },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRE }
+      { id: result.insertId, email, tipo },
+      jwtSecret,
+      { expiresIn: jwtExpire }
     );
 
     res.status(201).json({
@@ -80,11 +75,10 @@ router.post('/register', [
       data: {
         token,
         user: {
-          id: result.id,
+          id: result.insertId,
           nome,
           email,
-          tipo,
-          data_registo: dataRegisto
+          tipo
         }
       }
     });
@@ -117,7 +111,7 @@ router.post('/login', [
     const { email, password } = req.body;
 
     // Procurar utilizador
-    const users = await query('SELECT * FROM utilizadores WHERE email = ? AND ativo = 1', [email]);
+    const [users] = await pool.query('SELECT * FROM utilizadores WHERE email = ?', [email]);
     
     if (users.length === 0) {
       return res.status(401).json({
@@ -129,7 +123,7 @@ router.post('/login', [
     const user = users[0];
 
     // Verificar password
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
       return res.status(401).json({
         success: false,
@@ -138,14 +132,21 @@ router.post('/login', [
     }
 
     // Criar token JWT
+    const jwtSecret = process.env.JWT_SECRET;
+    const jwtExpire = process.env.JWT_EXPIRE || '7d';
+    
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET não definido nas variáveis de ambiente');
+    }
+    
     const token = jwt.sign(
       { id: user.id, email: user.email, tipo: user.tipo },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRE }
+      jwtSecret,
+      { expiresIn: jwtExpire }
     );
 
     // Remover password do objeto user
-    delete user.password;
+    delete user.password_hash;
 
     res.json({
       success: true,
@@ -169,7 +170,7 @@ router.post('/login', [
 // @access  Private
 router.get('/me', auth, async (req, res) => {
   try {
-    const users = await query('SELECT id, nome, email, tipo, data_registo FROM utilizadores WHERE id = ?', [req.user.id]);
+    const [users] = await pool.query('SELECT id, nome, email, tipo, data_registo FROM utilizadores WHERE id = ?', [req.user.id]);
     
     if (users.length === 0) {
       return res.status(404).json({
@@ -210,7 +211,7 @@ router.put('/update-password', auth, [
     const { currentPassword, newPassword } = req.body;
 
     // Obter utilizador
-    const users = await query('SELECT password FROM utilizadores WHERE id = ?', [req.user.id]);
+    const [users] = await pool.query('SELECT password FROM utilizadores WHERE id = ?', [req.user.id]);
     if (users.length === 0) {
       return res.status(404).json({
         success: false,
@@ -231,7 +232,7 @@ router.put('/update-password', auth, [
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     // Atualizar password
-    await queryRun(
+    await pool.query(
       'UPDATE utilizadores SET password = ?, atualizado_em = CURRENT_TIMESTAMP WHERE id = ?',
       [hashedPassword, req.user.id]
     );

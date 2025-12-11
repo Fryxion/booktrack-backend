@@ -1,262 +1,117 @@
-const sqlite3 = require('sqlite3').verbose();
-const bcrypt = require('bcryptjs');
-const path = require('path');
+const mysql = require('mysql2/promise');
 require('dotenv').config();
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../database/booktrack.db');
-
-const db = new sqlite3.Database(DB_PATH, (err) => {
-  if (err) {
-    console.error('Erro ao conectar à base de dados:', err.message);
-    process.exit(1);
-  }
-});
-
-db.run('PRAGMA foreign_keys = ON');
+const dbConfig = {
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'booktrack',
+  port: process.env.DB_PORT || 3306,
+  charset: 'utf8mb4'
+};
 
 const seedDatabase = async () => {
+  let connection;
+  
   try {
-    // Hash da password padrão (password: "123456")
-    const hashedPassword = await bcrypt.hash('123456', 10);
+    connection = await mysql.createConnection(dbConfig);
+    console.log('✅ Conectado à base de dados');
 
-    // Inserir utilizadores de exemplo
-    const utilizadores = [
-      {
-        nome: 'José Saramago',
-        email: 'josesaramago@gmail.com',
-        password: hashedPassword,
-        tipo: 'Professor',
-        data_registo: '15/09/2025'
-      },
-      {
-        nome: 'Maria Silva',
-        email: 'maria.silva@escola.pt',
-        password: hashedPassword,
-        tipo: 'Aluno',
-        data_registo: '01/09/2025'
-      },
-      {
-        nome: 'João Santos',
-        email: 'joao.santos@escola.pt',
-        password: hashedPassword,
-        tipo: 'Funcionário',
-        data_registo: '10/09/2025'
-      },
-      {
-        nome: 'Admin Sistema',
-        email: 'admin@booktrack.pt',
-        password: hashedPassword,
-        tipo: 'Admin',
-        data_registo: '01/01/2025'
-      }
-    ];
+    // Hash da password "123456" (igual ao script SQL original)
+    const password_hash = '$2a$10$3our6BIGaCR7UaT/ApcGYuDWlxPO8Jb20wS2LfOyikT4LdMD0DEf2';
 
+    // ============================================
+    // INSERIR UTILIZADORES
+    // ============================================
     console.log('📝 A inserir utilizadores...');
-    for (const user of utilizadores) {
-      await new Promise((resolve, reject) => {
-        db.run(
-          `INSERT INTO utilizadores (nome, email, password, tipo, data_registo) VALUES (?, ?, ?, ?, ?)`,
-          [user.nome, user.email, user.password, user.tipo, user.data_registo],
-          (err) => {
-            if (err) reject(err);
-            else resolve();
-          }
-        );
-      });
-    }
+    
+    await connection.query(`
+      INSERT INTO utilizadores (nome, email, password_hash, tipo) VALUES
+      ('José Saramago', 'josesaramago@gmail.com', ?, 'professor'),
+      ('Maria Silva', 'maria.silva@aluno.pt', ?, 'aluno'),
+      ('João Costa', 'joao.costa@aluno.pt', ?, 'aluno'),
+      ('Ana Bibliotecária', 'ana.bib@biblioteca.pt', ?, 'bibliotecario')
+    `, [password_hash, password_hash, password_hash, password_hash]);
+    
     console.log('✅ Utilizadores inseridos');
 
-    // Inserir livros de exemplo
-    const livros = [
-      {
-        titulo: 'Os Lusíadas',
-        autor: 'Luís de Camões',
-        isbn: '978-9722034364',
-        publicacao: '1572',
-        categoria: 'Poesia Épica',
-        descricao: 'Epopeia que narra os feitos dos navegadores portugueses, principalmente Vasco da Gama na descoberta do caminho marítimo para a Índia.',
-        disponivel: 1,
-        quantidade_total: 3,
-        quantidade_disponivel: 2
-      },
-      {
-        titulo: 'Memorial do Convento',
-        autor: 'José Saramago',
-        isbn: '978-9722019521',
-        publicacao: '1982',
-        categoria: 'Romance Histórico',
-        descricao: 'Romance histórico sobre a construção do Convento de Mafra no século XVIII, entrelaçando as vidas de Baltasar e Blimunda.',
-        disponivel: 1,
-        quantidade_total: 2,
-        quantidade_disponivel: 1
-      },
-      {
-        titulo: 'Mensagem',
-        autor: 'Fernando Pessoa',
-        isbn: '978-9722520447',
-        publicacao: '1934',
-        categoria: 'Poesia',
-        descricao: 'Obra poética sobre a história e o destino de Portugal, dividida em três partes: Brasão, Mar Português e O Encoberto.',
-        disponivel: 0,
-        quantidade_total: 2,
-        quantidade_disponivel: 0
-      },
-      {
-        titulo: 'A Cidade e as Serras',
-        autor: 'Eça de Queirós',
-        isbn: '978-9722019828',
-        publicacao: '1901',
-        categoria: 'Romance',
-        descricao: 'Romance que contrasta a vida na cidade de Paris com a vida rural nas serras portuguesas, através da personagem Jacinto.',
-        disponivel: 1,
-        quantidade_total: 3,
-        quantidade_disponivel: 3
-      },
-      {
-        titulo: 'O Crime do Padre Amaro',
-        autor: 'Eça de Queirós',
-        isbn: '978-9722019835',
-        publicacao: '1875',
-        categoria: 'Romance Realista',
-        descricao: 'Romance realista que retrata a hipocrisia e corrupção do clero numa pequena cidade portuguesa.',
-        disponivel: 1,
-        quantidade_total: 2,
-        quantidade_disponivel: 2
-      },
-      {
-        titulo: 'O Primo Basílio',
-        autor: 'Eça de Queirós',
-        isbn: '978-9722034371',
-        publicacao: '1878',
-        categoria: 'Romance Realista',
-        descricao: 'Romance que aborda o adultério e a sociedade burguesa lisboeta do século XIX.',
-        disponivel: 1,
-        quantidade_total: 2,
-        quantidade_disponivel: 2
-      },
-      {
-        titulo: 'Ensaio sobre a Cegueira',
-        autor: 'José Saramago',
-        isbn: '978-9722019545',
-        publicacao: '1995',
-        categoria: 'Romance',
-        descricao: 'Parábola sobre a natureza humana e a sociedade, onde uma epidemia de cegueira branca atinge uma cidade.',
-        disponivel: 1,
-        quantidade_total: 3,
-        quantidade_disponivel: 3
-      },
-      {
-        titulo: 'O Ano da Morte de Ricardo Reis',
-        autor: 'José Saramago',
-        isbn: '978-9722019552',
-        publicacao: '1984',
-        categoria: 'Romance',
-        descricao: 'Romance que explora a vida de Ricardo Reis, um dos heterónimos de Fernando Pessoa, em Lisboa de 1935-1936.',
-        disponivel: 1,
-        quantidade_total: 2,
-        quantidade_disponivel: 2
-      }
-    ];
-
+    // ============================================
+    // INSERIR LIVROS
+    // ============================================
     console.log('📚 A inserir livros...');
-    for (const livro of livros) {
-      await new Promise((resolve, reject) => {
-        db.run(
-          `INSERT INTO livros (titulo, autor, isbn, publicacao, categoria, descricao, disponivel, quantidade_total, quantidade_disponivel) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [livro.titulo, livro.autor, livro.isbn, livro.publicacao, livro.categoria, livro.descricao, livro.disponivel, livro.quantidade_total, livro.quantidade_disponivel],
-          (err) => {
-            if (err) reject(err);
-            else resolve();
-          }
-        );
-      });
-    }
+    
+    await connection.query(`
+      INSERT INTO livros (titulo, autor, isbn, categoria, descricao, data_publicacao, total_copias, copias_disponiveis) VALUES
+      ('Os Lusíadas', 'Luís de Camões', '978-0000000001', 'Poesia Épica', 'Epopeia que narra os feitos dos navegadores portugueses, principalmente Vasco da Gama na descoberta do caminho marítimo para a Índia.', '1572-01-01', 3, 2),
+      ('Memorial do Convento', 'José Saramago', '978-0000000002', 'Romance Histórico', 'Romance histórico sobre a construção do Convento de Mafra no século XVIII.', '1982-01-01', 2, 2),
+      ('Mensagem', 'Fernando Pessoa', '978-0000000003', 'Poesia', 'Obra poética sobre a história e o destino de Portugal.', '1934-01-01', 2, 0),
+      ('A Cidade e as Serras', 'Eça de Queirós', '978-0000000004', 'Romance', 'Romance que contrasta a vida na cidade de Paris com a vida rural nas serras portuguesas.', '1901-01-01', 3, 3),
+      ('O Crime do Padre Amaro', 'Eça de Queirós', '978-0000000005', 'Romance Realista', 'Romance realista que retrata a hipocrisia e corrupção do clero numa pequena cidade portuguesa.', '1875-01-01', 2, 2)
+    `);
+    
     console.log('✅ Livros inseridos');
 
-    // Inserir reservas de exemplo
-    const reservas = [
-      {
-        utilizador_id: 1,
-        livro_id: 1,
-        data_reserva: '10/11/2025',
-        data_expiracao: '17/11/2025',
-        status: 'ativa'
-      },
-      {
-        utilizador_id: 1,
-        livro_id: 2,
-        data_reserva: '12/11/2025',
-        data_expiracao: '19/11/2025',
-        status: 'ativa'
-      }
-    ];
-
-    console.log('📋 A inserir reservas...');
-    for (const reserva of reservas) {
-      await new Promise((resolve, reject) => {
-        db.run(
-          `INSERT INTO reservas (utilizador_id, livro_id, data_reserva, data_expiracao, status) 
-           VALUES (?, ?, ?, ?, ?)`,
-          [reserva.utilizador_id, reserva.livro_id, reserva.data_reserva, reserva.data_expiracao, reserva.status],
-          (err) => {
-            if (err) reject(err);
-            else resolve();
-          }
-        );
-      });
-    }
-    console.log('✅ Reservas inseridas');
-
-    // Inserir histórico de empréstimos
-    const emprestimos = [
-      {
-        utilizador_id: 1,
-        livro_id: 3,
-        data_emprestimo: '01/10/2025',
-        data_devolucao_prevista: '15/10/2025',
-        data_devolucao_real: '15/10/2025',
-        status: 'devolvido'
-      },
-      {
-        utilizador_id: 1,
-        livro_id: 4,
-        data_emprestimo: '20/09/2025',
-        data_devolucao_prevista: '04/10/2025',
-        data_devolucao_real: '04/10/2025',
-        status: 'devolvido'
-      }
-    ];
-
+    // ============================================
+    // INSERIR EMPRÉSTIMOS
+    // ============================================
     console.log('📖 A inserir empréstimos...');
-    for (const emprestimo of emprestimos) {
-      await new Promise((resolve, reject) => {
-        db.run(
-          `INSERT INTO emprestimos (utilizador_id, livro_id, data_emprestimo, data_devolucao_prevista, data_devolucao_real, status) 
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [emprestimo.utilizador_id, emprestimo.livro_id, emprestimo.data_emprestimo, emprestimo.data_devolucao_prevista, emprestimo.data_devolucao_real, emprestimo.status],
-          (err) => {
-            if (err) reject(err);
-            else resolve();
-          }
-        );
-      });
-    }
+    
+    await connection.query(`
+      INSERT INTO emprestimos (id_utilizador, id_livro, isbn, categoria, data_emprestimo, data_devolucao_prevista, estado) VALUES
+      (1, 1, '978-0000000001', 'Poesia Épica', '2025-10-01 10:00:00', '2025-10-15 23:59:59', 'ativo'),
+      (2, 3, '978-0000000003', 'Poesia', '2025-10-20 14:30:00', '2025-11-03 23:59:59', 'ativo')
+    `);
+    
     console.log('✅ Empréstimos inseridos');
 
-    console.log('\n🎉 Base de dados populada com sucesso!');
-    console.log('\n📌 Credenciais de teste:');
-    console.log('   Email: josesaramago@gmail.com');
-    console.log('   Password: 123456\n');
-    console.log('   Email: admin@booktrack.pt');
-    console.log('   Password: 123456\n');
+    // ============================================
+    // INSERIR RESERVAS
+    // ============================================
+    console.log('📋 A inserir reservas...');
+    
+    await connection.query(`
+      INSERT INTO reservas (id_utilizador, id_livro, data_reserva, data_expiracao, estado, posicao_fila) VALUES
+      (1, 2, '2025-11-10 09:00:00', '2025-11-17 23:59:59', 'pendente', 1),
+      (2, 3, '2025-11-12 11:30:00', '2025-11-19 23:59:59', 'pendente', 1)
+    `);
+    
+    console.log('✅ Reservas inseridas');
 
-    db.close();
-    process.exit(0);
+    // ============================================
+    // INSERIR NOTIFICAÇÕES
+    // ============================================
+    console.log('🔔 A inserir notificações...');
+    
+    await connection.query(`
+      INSERT INTO notificacoes (id_utilizador, mensagem, tipo, lida) VALUES
+      (1, 'O seu empréstimo de "Os Lusíadas" vence em 2 dias.', 'devolucao', FALSE),
+      (2, 'A sua reserva de "Mensagem" foi confirmada.', 'reserva', FALSE)
+    `);
+    
+    console.log('✅ Notificações inseridas');
+
+    console.log('\n🎉 Base de dados populada com sucesso!');
+    console.log('\n📌 Credenciais de teste (password para todos: 123456):');
+    console.log('\n   👨‍🏫 Professor:');
+    console.log('      Email: josesaramago@gmail.com');
+    console.log('      Password: 123456\n');
+    console.log('   👨‍🎓 Aluno 1:');
+    console.log('      Email: maria.silva@aluno.pt');
+    console.log('      Password: 123456\n');
+    console.log('   👨‍🎓 Aluno 2:');
+    console.log('      Email: joao.costa@aluno.pt');
+    console.log('      Password: 123456\n');
+    console.log('   👩‍💼 Bibliotecária:');
+    console.log('      Email: ana.bib@biblioteca.pt');
+    console.log('      Password: 123456\n');
+
   } catch (error) {
-    console.error('❌ Erro ao popular base de dados:', error);
-    db.close();
+    console.error('❌ Erro ao popular base de dados:', error.message);
     process.exit(1);
+  } finally {
+    if (connection) {
+      await connection.end();
+    }
   }
 };
 
