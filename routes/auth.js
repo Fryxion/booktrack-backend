@@ -243,4 +243,194 @@ router.put('/update-password', auth, [
   }
 });
 
+// @route   PUT /api/auth/update-profile
+// @desc    Atualizar perfil do utilizador (nome e email)
+// @access  Private
+router.put('/update-profile', auth, [
+  body('nome').optional().trim().notEmpty().withMessage('Nome não pode estar vazio'),
+  body('email').optional().isEmail().withMessage('Email inválido'),
+  body('password').optional().isLength({ min: 6 }).withMessage('Password deve ter pelo menos 6 caracteres')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array()
+      });
+    }
+
+    const { nome, email, password } = req.body;
+
+    // Validar se o utilizador existe
+    const [users] = await pool.query(
+      'SELECT id_utilizador, nome, email, tipo, password_hash FROM utilizadores WHERE id_utilizador = ?',
+      [req.user.id]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilizador não encontrado'
+      });
+    }
+
+    const user = users[0];
+
+    // Se email foi alterado, verificar se já existe
+    if (email && email !== user.email) {
+      const [existingUser] = await pool.query(
+        'SELECT id_utilizador FROM utilizadores WHERE email = ? AND id_utilizador != ?',
+        [email, req.user.id]
+      );
+      
+      if (existingUser.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Este email já está registado'
+        });
+      }
+    }
+
+    // Preparar campos a atualizar
+    const updateFields = [];
+    const updateValues = [];
+
+    if (nome) {
+      updateFields.push('nome = ?');
+      updateValues.push(nome);
+    }
+
+    if (email) {
+      updateFields.push('email = ?');
+      updateValues.push(email);
+    }
+
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      updateFields.push('password_hash = ?');
+      updateValues.push(hashedPassword);
+    }
+
+    // Se não há campos a atualizar
+    if (updateFields.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nenhum campo a atualizar'
+      });
+    }
+
+    // Adicionar id do utilizador aos valores
+    updateValues.push(req.user.id);
+
+    // Atualizar utilizador
+    await pool.query(
+      `UPDATE utilizadores SET ${updateFields.join(', ')} WHERE id_utilizador = ?`,
+      updateValues
+    );
+
+    // Buscar dados atualizados
+    const [updatedUsers] = await pool.query(
+      'SELECT id_utilizador, nome, email, tipo FROM utilizadores WHERE id_utilizador = ?',
+      [req.user.id]
+    );
+
+    const updatedUser = updatedUsers[0];
+
+    // Gerar novo token com dados atualizados
+    const token = jwt.sign(
+      { id: updatedUser.id_utilizador, email: updatedUser.email, tipo: updatedUser.tipo },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRE }
+    );
+
+    res.json({
+      success: true,
+      message: 'Perfil atualizado com sucesso',
+      data: {
+        token,
+        user: {
+          id: updatedUser.id_utilizador,
+          nome: updatedUser.nome,
+          email: updatedUser.email,
+          tipo: updatedUser.tipo
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar perfil:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao atualizar perfil'
+    });
+  }
+});
+
+// @route   DELETE /api/auth/delete-account
+// @desc    Eliminar conta do utilizador
+// @access  Private
+router.delete('/delete-account', auth, [
+  body('password').notEmpty().withMessage('Password é obrigatória para confirmar eliminação')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array()
+      });
+    }
+
+    const { password } = req.body;
+
+    // Validar se o utilizador existe
+    const [users] = await pool.query(
+      'SELECT id_utilizador, password_hash FROM utilizadores WHERE id_utilizador = ?',
+      [req.user.id]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilizador não encontrado'
+      });
+    }
+
+    // Verificar password para confirmar eliminação
+    const isMatch = await bcrypt.compare(password, users[0].password_hash);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: 'Password incorreta'
+      });
+    }
+
+    // Eliminar utilizador
+    await pool.query(
+      'DELETE FROM utilizadores WHERE id_utilizador = ?',
+      [req.user.id]
+    );
+
+    res.json({
+      success: true,
+      message: 'Conta eliminada com sucesso'
+    });
+  } catch (error) {
+    console.error('Erro ao eliminar conta:', error);
+    
+    // Verificar se o erro é devido a constraint de chave estrangeira
+    if (error.code === 'ER_ROW_IS_REFERENCED_2') {
+      return res.status(400).json({
+        success: false,
+        message: 'Não é possível eliminar a conta. Existem registos associados (empréstimos, reservas, etc.)'
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao eliminar conta'
+    });
+  }
+});
+
 module.exports = router;
