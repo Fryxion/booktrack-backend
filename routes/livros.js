@@ -279,7 +279,7 @@ router.delete('/:id', auth, checkRole(['bibliotecario']), async (req, res) => {
 
     // Verificar se existem empréstimos ativos
     const [emprestimosAtivos] = await pool.query(
-      'SELECT id_emprestimo FROM emprestimos WHERE id_livro = ? AND data_publicacao = ?',
+      'SELECT id_emprestimo FROM emprestimos WHERE id_livro = ? AND estado = ?',
       [req.params.id, 'ativo']
     );
 
