@@ -11,7 +11,8 @@ router.get('/', auth, async (req, res) => {
     let query = `
       SELECT e.*, 
              l.titulo, l.autor,
-             u.nome as nome_utilizador, u.email
+             u.nome as nome_utilizador, u.email,
+             l.isbn as isbn_livro
       FROM emprestimos e
       JOIN livros l ON e.id_livro = l.id_livro
       JOIN utilizadores u ON e.id_utilizador = u.id_utilizador
@@ -219,7 +220,7 @@ router.put('/:id/devolver', auth, checkRole(['bibliotecario']), async (req, res)
     const emprestimo = emprestimos[0];
 
     // ATENÇÃO: "data_publicacao" é o ESTADO
-    if (emprestimo.data_publicacao !== 'ativo') {
+    if (emprestimo.estado !== 'ativo') {
       await connection.rollback();
       return res.status(400).json({
         success: false,
@@ -239,7 +240,7 @@ router.put('/:id/devolver', auth, checkRole(['bibliotecario']), async (req, res)
 
     // Atualizar empréstimo - ATENÇÃO: "data_publicacao" é o ESTADO e "total_copias" é a MULTA
     await connection.query(
-      'UPDATE emprestimos SET data_publicacao = ?, total_copias = ? WHERE id_emprestimo = ?',
+      'UPDATE emprestimos SET estado = ?, multa = ?, data_devolucao_efetiva = now() WHERE id_emprestimo = ?',
       ['devolvido', multa, req.params.id]
     );
 
@@ -267,68 +268,6 @@ router.put('/:id/devolver', auth, checkRole(['bibliotecario']), async (req, res)
     });
   } finally {
     connection.release();
-  }
-});
-
-// @route   PUT /api/emprestimos/:id/renovar
-// @desc    Renovar empréstimo
-// @access  Private
-router.put('/:id/renovar', auth, async (req, res) => {
-  try {
-    // Verificar se empréstimo existe
-    const [emprestimos] = await pool.query(
-      'SELECT * FROM emprestimos WHERE id_emprestimo = ?',
-      [req.params.id]
-    );
-
-    if (emprestimos.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Empréstimo não encontrado'
-      });
-    }
-
-    const emprestimo = emprestimos[0];
-
-    // Verificar permissões
-    if (req.user.tipo !== 'bibliotecario' && emprestimo.id_utilizador !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'Acesso negado'
-      });
-    }
-
-    // ATENÇÃO: "data_publicacao" é o ESTADO
-    if (emprestimo.data_publicacao !== 'ativo') {
-      return res.status(400).json({
-        success: false,
-        message: 'Apenas empréstimos ativos podem ser renovados'
-      });
-    }
-
-    // Calcular nova data de devolução (+14 dias a partir de hoje)
-    const novaDataDevolucao = new Date();
-    novaDataDevolucao.setDate(novaDataDevolucao.getDate() + 14);
-
-    // Atualizar data de devolução
-    await pool.query(
-      'UPDATE emprestimos SET data_devolucao_prevista = ? WHERE id_emprestimo = ?',
-      [novaDataDevolucao, req.params.id]
-    );
-
-    res.json({
-      success: true,
-      message: 'Empréstimo renovado com sucesso',
-      data: {
-        nova_data_devolucao: novaDataDevolucao
-      }
-    });
-  } catch (error) {
-    console.error('Erro ao renovar empréstimo:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao renovar empréstimo'
-    });
   }
 });
 
