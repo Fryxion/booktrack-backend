@@ -162,6 +162,25 @@ router.post('/', auth, async (req, res) => {
       [req.user.id, id_livro, dataExpiracao, 'pendente', posicaoFila]
     );
 
+    const [result_update_copias] = await pool.query(
+      `UPDATE livros set copias_disponiveis = copias_disponiveis - 1 WHERE id_livro = ?
+      and copias_disponiveis > 0`,
+      [id_livro]
+    );
+
+    if (result_update_copias.affectedRows === 0) {
+      // Reverter a criação da reserva se não houver cópias disponíveis
+      await pool.query(
+        'DELETE FROM reservas WHERE id_reserva = ?',
+        [result.insertId]
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: 'Não há cópias disponíveis para reserva'
+      });
+    }
+
     res.status(201).json({
       success: true,
       message: 'Reserva criada com sucesso',
@@ -225,6 +244,11 @@ router.put('/:id/cancelar', auth, async (req, res) => {
       ['cancelada', req.params.id]
     );
 
+    await pool.query(
+      'UPDATE livros SET copias_disponiveis = copias_disponiveis + 1 WHERE id_livro = ?',
+      [reserva.id_livro]
+    );
+
     res.json({
       success: true,
       message: 'Reserva cancelada com sucesso'
@@ -237,5 +261,69 @@ router.put('/:id/cancelar', auth, async (req, res) => {
     });
   }
 });
+
+// POST /api/reservas/:id/processar - Processar reserva (converter em empréstimo)
+router.post('/:id/processar', auth, checkRole(['bibliotecario']), async (req, res) => {
+  const { id } = req.params;
+  const connection = await pool.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+    
+    // 1. Buscar dados da reserva
+    const [reserva] = await connection.query(
+      `SELECT r.*, l.id_livro 
+       FROM reservas r 
+       JOIN livros l ON r.id_livro = l.id_livro 
+       WHERE r.id_reserva = ?`,
+      [id]
+    );
+    
+    if (reserva.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Reserva não encontrada'
+      });
+    }
+    
+    const { id_utilizador, id_livro } = reserva[0];
+    
+    // 2. Criar empréstimo (14 dias de prazo)
+    const dataEmprestimo = new Date();
+    const dataDevolucaoPrevista = new Date();
+    dataDevolucaoPrevista.setDate(dataDevolucaoPrevista.getDate() + 14);
+    
+    await connection.query(
+      `INSERT INTO emprestimos (id_utilizador, id_livro, data_emprestimo, data_devolucao_prevista) 
+       VALUES (?, ?, ?, ?)`,
+      [id_utilizador, id_livro, dataEmprestimo, dataDevolucaoPrevista]
+    );
+    
+    // 4. Eliminar a reserva (já foi processada)
+    await connection.query(
+      `DELETE FROM reservas WHERE id_reserva = ?`,
+      [id]
+    );
+    
+    await connection.commit();
+    
+    res.json({
+      success: true,
+      message: 'Reserva processada e empréstimo criado com sucesso'
+    });
+    
+  } catch (error) {
+    await connection.rollback();
+    console.error('Erro ao processar reserva:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao processar reserva'
+    });
+  } finally {
+    connection.release();
+  }
+});
+
 
 module.exports = router;
