@@ -133,7 +133,7 @@ router.post('/', auth, async (req, res) => {
 
     // Verificar se utilizador já tem este livro emprestado
     const [emprestimoAtivo] = await pool.query(
-      'SELECT id_emprestimo FROM emprestimos WHERE id_utilizador = ? AND id_livro = ? AND data_publicacao = ?',
+      'SELECT id_emprestimo FROM emprestimos WHERE id_utilizador = ? AND id_livro = ? AND estado = ?',
       [req.user.id, id_livro, 'ativo']
     );
 

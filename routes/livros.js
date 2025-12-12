@@ -51,6 +51,29 @@ router.get('/', async (req, res) => {
   }
 });
 
+// @route   GET /api/livros/categorias/list
+// @desc    Listar todas as categorias de livros
+// @access  Public
+router.get('/categorias/list', async (req, res) => {
+  try {
+    const [categorias] = await pool.query(
+      'SELECT DISTINCT categoria FROM livros WHERE categoria IS NOT NULL ORDER BY categoria'
+    );
+
+    res.json({
+      success: true,
+      count: categorias.length,
+      data: categorias.map(row => row.categoria)
+    });
+  } catch (error) {
+    console.error('Erro ao listar categorias:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao listar categorias'
+    });
+  }
+});
+
 // @route   GET /api/livros/:id
 // @desc    Obter detalhes de um livro específico
 // @access  Public

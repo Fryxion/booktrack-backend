@@ -3,10 +3,6 @@ const router = express.Router();
 const pool = require('../config/database');
 const { auth, checkRole } = require('../middleware/auth');
 
-// ATENÇÃO: O schema SQL tem erros nos nomes dos campos da tabela emprestimos:
-// - "data_publicacao" é na verdade o ESTADO do empréstimo (enum: 'ativo', 'devolvido', 'atrasado')
-// - "total_copias" é na verdade o valor da MULTA (DECIMAL)
-
 // @route   GET /api/emprestimos
 // @desc    Listar empréstimos
 // @access  Private
