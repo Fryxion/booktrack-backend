@@ -19,12 +19,13 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/livros', require('./routes/livros'));
 app.use('/api/reservas', require('./routes/reservas'));
 app.use('/api/emprestimos', require('./routes/emprestimos'));
+app.use('/api/utilizadores', require('./routes/utilizadores'));
 
 // Rota de teste
 app.get('/api', (req, res) => {
   res.json({
     success: true,
-    message: 'API BookTrack est� a funcionar!',
+    message: 'API BookTrack está a funcionar!',
     version: '1.0.0',
     endpoints: {
       auth: '/api/auth',
