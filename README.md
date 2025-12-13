@@ -1,384 +1,649 @@
-# BookTrack Backend API
+# Manual Técnico - BookTrack
+## Guia de Instalação e Configuração
 
-API REST para o sistema de gestão de biblioteca BookTrack, desenvolvida em Node.js com Express e SQLite.
+---
 
-## 📋 Requisitos
+## 📋 Índice
 
-- Node.js (versão 16 ou superior)
-- npm (geralmente incluído com Node.js)
+1. [Requisitos do Sistema](#1-requisitos-do-sistema)
+2. [Instalação do Frontend](#2-instalação-do-frontend)
+3. [Instalação do Backend](#3-instalação-do-backend)
+4. [Configuração da Base de Dados](#4-configuração-da-base-de-dados)
+5. [Configuração das Variáveis de Ambiente](#5-configuração-das-variáveis-de-ambiente)
+6. [Arranque da Aplicação](#6-arranque-da-aplicação)
+7. [Verificação da Instalação](#7-verificação-da-instalação)
+8. [Padrões de Código](#8-padrões-de-código)
+9. [Resolução de Problemas](#9-resolução-de-problemas)
 
-## 🚀 Instalação
+---
 
-1. **Instalar dependências**
+## 1. Requisitos do Sistema
+
+### Software Necessário
+
+| Software | Versão Mínima | Descrição |
+|----------|---------------|-----------|
+| **Node.js** | 18.x | Runtime JavaScript |
+| **npm** | 9.x | Gestor de pacotes (incluído com Node.js) |
+| **MariaDB** ou **MySQL** | 10.x / 8.x | Sistema de gestão de base de dados |
+| **Git** | 2.x | Controlo de versões |
+
+### Hardware Recomendado
+
+- **RAM:** 4GB mínimo, 8GB recomendado
+- **Espaço em Disco:** 2GB livres
+- **Processador:** Dual-core ou superior
+
+### Sistemas Operativos Suportados
+
+- Windows 10/11
+- macOS 10.15+
+- Linux (Ubuntu 20.04+, Debian 10+)
+
+---
+
+## 2. Instalação do Frontend
+
+### 2.1. Verificar Pré-requisitos
+
 ```bash
+# Verificar versão do Node.js
+node --version
+
+# Verificar versão do npm
+npm --version
+```
+
+**Resultado esperado:**
+```
+v18.x.x ou superior
+9.x.x ou superior
+```
+
+### 2.2. Descarregar o Projeto
+
+```bash
+# Clonar repositório
+git clone https://github.com/Fryxion/booktrack
+
+# Navegar para o diretório frontend
+cd booktrack/
+```
+
+### 2.3. Instalar Dependências do Frontend
+
+```bash
+# Instalar todas as dependências
 npm install
 ```
 
-2. **Configurar variáveis de ambiente**
-```bash
-# Copiar ficheiro de exemplo
-cp .env.example .env
+### 2.4. Estrutura de Dependências do Frontend
 
-# Editar o ficheiro .env e configurar as variáveis
+As principais dependências instaladas são:
+
+```json
+{
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^6.x",
+    "axios": "^1.x",
+    "jwt-decode": "^4.x"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.x",
+    "http-proxy-middleware": "^2.x"
+  }
+}
 ```
 
-3. **Inicializar base de dados**
+---
+
+## 3. Instalação do Backend
+
 ```bash
-npm run init-db
+# Clonar repositório
+git clone https://github.com/Fryxion/booktrack-backend
+
+# Navegar para o diretório frontend
+cd booktrack/
 ```
 
-4. **Popular base de dados com dados de exemplo** (opcional)
+### 3.1. Instalar Dependências do Backend
+
 ```bash
-npm run seed-db
+# Instalar todas as dependências
+npm install
 ```
 
-## 💻 Executar o Servidor
+### 3.3. Estrutura de Dependências do Backend
 
-### Modo de Desenvolvimento (com nodemon)
+As principais dependências instaladas são:
+
+```json
+{
+  "dependencies": {
+    "express": "^4.x",
+    "mysql2": "^3.x",
+    "jsonwebtoken": "^9.x",
+    "bcrypt": "^5.x",
+    "cors": "^2.x",
+    "dotenv": "^16.x",
+    "express-validator": "^7.x"
+  },
+  "devDependencies": {
+    "nodemon": "^3.x"
+  }
+}
+```
+
+---
+
+## 4. Configuração da Base de Dados
+
+### 4.1. Instalação do MariaDB
+
+#### Windows
+
+1. Descarregar instalador de: https://mariadb.org/download/
+2. Executar instalador
+3. Definir password do utilizador **root**
+4. Completar instalação
+
+#### Linux (Ubuntu/Debian)
+
 ```bash
+# Atualizar repositórios
+sudo apt update
+
+# Instalar MariaDB
+sudo apt install mariadb-server mariadb-client
+
+# Iniciar serviço
+sudo systemctl start mysql
+sudo systemctl enable mysql
+
+# Configuração segura
+sudo mysql_secure_installation
+```
+
+#### macOS
+
+```bash
+# Instalar via Homebrew
+brew install mariadb
+
+# Iniciar serviço
+brew services start mariadb
+
+# Configuração segura
+mysql_secure_installation
+```
+
+### 4.2. Criar Base de Dados
+
+```bash
+# Aceder ao MySQL/MariaDB
+mysql -u root -p
+
+# Será solicitada a password definida na instalação
+```
+
+Executar os seguintes comandos SQL:
+
+```sql
+-- Criar base de dados
+CREATE DATABASE booktrack CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Criar utilizador para a aplicação
+CREATE USER 'booktrack_user'@'localhost' IDENTIFIED BY 'password_segura_aqui';
+
+-- Conceder privilégios
+GRANT ALL PRIVILEGES ON booktrack.* TO 'booktrack_user'@'localhost';
+
+-- Aplicar alterações
+FLUSH PRIVILEGES;
+
+-- Sair
+EXIT;
+```
+
+### 4.3. Executar Script de Schema
+
+```bash
+# A partir da raiz do projeto
+mysql -u root -p booktrack < database/script.sql
+```
+
+**Nota:** Este comando importa todas as tabelas e dados iniciais.
+
+### 4.4. Verificar Instalação da BD
+
+```bash
+# Aceder novamente ao MySQL
+mysql -u root -p
+
+# Selecionar base de dados
+USE booktrack;
+
+# Listar tabelas
+SHOW TABLES;
+```
+
+**Resultado esperado:**
+```
++---------------------+
+| Tables_in_booktrack |
++---------------------+
+| catalogo            |
+| emprestimos         |
+| livros              |
+| notificacoes        |
+| relatorios          |
+| reservas            |
+| utilizadores        |
++---------------------+
+7 rows in set (0.00 sec)
+```
+
+---
+
+## 5. Configuração das Variáveis de Ambiente
+
+### 5.1. Configurar Frontend
+
+Criar ficheiro `.env` no diretório `frontend/`:
+
+```env
+# URL do Backend API
+REACT_APP_API_URL=http://localhost:5000/api
+
+# Porta do Frontend
+PORT=3000
+
+# Ambiente
+NODE_ENV=development
+```
+
+### 5.2. Configurar Backend
+
+Criar ficheiro `.env` no diretório `backend/`:
+
+```env
+# Configuração do Servidor
+PORT=5000
+NODE_ENV=development
+
+# Configuração da Base de Dados
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=booktrack_user
+DB_PASSWORD=password_segura_aqui
+DB_NAME=booktrack
+
+# Configuração JWT
+JWT_SECRET=seu_segredo_jwt_super_seguro_minimo_32_caracteres_aqui
+JWT_EXPIRES_IN=24h
+
+# CORS
+CORS_ORIGIN=http://localhost:3000
+```
+
+### 5.3. Gerar JWT Secret Seguro
+
+```bash
+# Windows (PowerShell)
+[Convert]::ToBase64String((1..64 | ForEach-Object { Get-Random -Maximum 256 }))
+
+# Linux/macOS
+openssl rand -base64 64
+
+# Node.js
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+```
+
+**Copiar o resultado e colar em `JWT_SECRET`**
+
+---
+
+## 6. Arranque da Aplicação
+
+### 6.1. Iniciar Backend
+
+```bash
+# Navegar para o diretório backend
+cd backend
+
+# Iniciar em modo desenvolvimento
 npm run dev
 ```
 
-### Modo de Produção
+**Resultado esperado:**
+```
+[nodemon] starting `node server.js`
+✅ Conectado à base de dados
+🚀 Servidor a correr na porta 5000
+```
+
+### 6.2. Iniciar Frontend (Nova Janela de Terminal)
+
 ```bash
+# Navegar para o diretório frontend
+cd frontend
+
+# Iniciar aplicação React
 npm start
 ```
 
-O servidor estará disponível em `http://localhost:5000`
-
-## 📚 Estrutura do Projeto
-
+**Resultado esperado:**
 ```
-booktrack-backend/
-├── config/
-│   └── database.js          # Configuração da base de dados SQLite
-├── middleware/
-│   ├── auth.js              # Middleware de autenticação JWT
-│   └── errorHandler.js      # Middleware de tratamento de erros
-├── routes/
-│   ├── auth.js              # Rotas de autenticação
-│   ├── livros.js            # Rotas de gestão de livros
-│   ├── reservas.js          # Rotas de gestão de reservas
-│   └── emprestimos.js       # Rotas de gestão de empréstimos
-├── scripts/
-│   ├── initDatabase.js      # Script de inicialização da BD
-│   └── seedDatabase.js      # Script para popular BD com dados
-├── database/
-│   └── booktrack.db         # Base de dados SQLite (criada automaticamente)
-├── .env.example             # Exemplo de variáveis de ambiente
-├── .gitignore
-├── package.json
-├── README.md
-└── server.js                # Ficheiro principal do servidor
+Compiled successfully!
+
+You can now view booktrack-frontend in the browser.
+
+  Local:            http://localhost:3000
+  On Your Network:  http://192.168.1.x:3000
 ```
 
-## 🔐 Autenticação
+**Nota:** O browser abrirá automaticamente em `http://localhost:3000`
 
-A API utiliza JWT (JSON Web Tokens) para autenticação. Após o login, inclua o token no header das requisições:
+---
+
+## 7. Verificação da Instalação
+
+### 7.1. Testar Backend API
+
+Abrir browser ou Postman e testar endpoint:
 
 ```
-Authorization: Bearer <seu_token_jwt>
+GET http://localhost:5000/api/livros
 ```
 
-## 📡 Endpoints da API
-
-### Autenticação
-
-#### Registar Utilizador
-```http
-POST /api/auth/register
-Content-Type: application/json
-
-{
-  "nome": "João Silva",
-  "email": "joao@exemplo.com",
-  "password": "senha123",
-  "tipo": "Aluno"
-}
-```
-
-#### Login
-```http
-POST /api/auth/login
-Content-Type: application/json
-
-{
-  "email": "joao@exemplo.com",
-  "password": "senha123"
-}
-```
-
-#### Obter Dados do Utilizador Atual
-```http
-GET /api/auth/me
-Authorization: Bearer <token>
-```
-
-#### Atualizar Password
-```http
-PUT /api/auth/update-password
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "currentPassword": "senha123",
-  "newPassword": "novaSenha456"
-}
-```
-
-### Livros
-
-#### Listar Livros
-```http
-GET /api/livros
-GET /api/livros?search=lusíadas
-GET /api/livros?categoria=Romance
-GET /api/livros?disponivel=true
-```
-
-#### Obter Detalhes de um Livro
-```http
-GET /api/livros/:id
-```
-
-#### Criar Livro (Staff apenas)
-```http
-POST /api/livros
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "titulo": "Novo Livro",
-  "autor": "Autor Nome",
-  "isbn": "978-1234567890",
-  "publicacao": "2025",
-  "categoria": "Romance",
-  "descricao": "Descrição do livro",
-  "quantidade_total": 3
-}
-```
-
-#### Atualizar Livro (Staff apenas)
-```http
-PUT /api/livros/:id
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "quantidade_disponivel": 2
-}
-```
-
-#### Eliminar Livro (Staff apenas)
-```http
-DELETE /api/livros/:id
-Authorization: Bearer <token>
-```
-
-#### Listar Categorias
-```http
-GET /api/livros/categorias/list
-```
-
-### Reservas
-
-#### Listar Reservas
-```http
-GET /api/reservas
-Authorization: Bearer <token>
-```
-
-#### Listar Minhas Reservas Ativas
-```http
-GET /api/reservas/minhas
-Authorization: Bearer <token>
-```
-
-#### Obter Detalhes de uma Reserva
-```http
-GET /api/reservas/:id
-Authorization: Bearer <token>
-```
-
-#### Criar Reserva
-```http
-POST /api/reservas
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "livro_id": 1
-}
-```
-
-#### Cancelar Reserva
-```http
-PUT /api/reservas/:id/cancelar
-Authorization: Bearer <token>
-```
-
-#### Completar Reserva (Staff apenas)
-```http
-PUT /api/reservas/:id/completar
-Authorization: Bearer <token>
-```
-
-### Empréstimos
-
-#### Listar Empréstimos
-```http
-GET /api/emprestimos
-Authorization: Bearer <token>
-```
-
-#### Listar Empréstimos Ativos
-```http
-GET /api/emprestimos/ativos
-Authorization: Bearer <token>
-```
-
-#### Obter Histórico de Empréstimos
-```http
-GET /api/emprestimos/historico
-Authorization: Bearer <token>
-```
-
-#### Obter Detalhes de um Empréstimo
-```http
-GET /api/emprestimos/:id
-Authorization: Bearer <token>
-```
-
-#### Criar Empréstimo (Staff apenas)
-```http
-POST /api/emprestimos
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "utilizador_id": 1,
-  "livro_id": 2,
-  "dias": 14
-}
-```
-
-#### Registar Devolução (Staff apenas)
-```http
-PUT /api/emprestimos/:id/devolver
-Authorization: Bearer <token>
-```
-
-#### Renovar Empréstimo
-```http
-PUT /api/emprestimos/:id/renovar
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "dias": 14
-}
-```
-
-## 👥 Tipos de Utilizadores
-
-- **Aluno**: Pode consultar catálogo, fazer reservas e ver seu histórico
-- **Professor**: Mesmas permissões que Aluno
-- **Funcionário**: Pode gerir livros, empréstimos e todas as reservas
-- **Admin**: Acesso total ao sistema
-
-## 🗃️ Base de Dados
-
-### Tabelas
-
-- **utilizadores**: Informação dos utilizadores
-- **livros**: Catálogo de livros
-- **reservas**: Reservas de livros
-- **emprestimos**: Empréstimos ativos e histórico
-
-### Relações
-
-- Um utilizador pode ter várias reservas
-- Um utilizador pode ter vários empréstimos
-- Um livro pode ter várias reservas
-- Um livro pode ter vários empréstimos
-
-## 🧪 Dados de Teste
-
-Após executar `npm run seed-db`, os seguintes utilizadores estarão disponíveis:
-
-### Professor
-- Email: josesaramago@gmail.com
-- Password: 123456
-
-### Admin
-- Email: admin@booktrack.pt
-- Password: 123456
-
-### Aluno
-- Email: maria.silva@escola.pt
-- Password: 123456
-
-## 📝 Respostas da API
-
-### Sucesso
+**Resposta esperada:**
 ```json
-{
-  "success": true,
-  "message": "Operação realizada com sucesso",
-  "data": { }
-}
+[
+  {
+    "id_livro": 1,
+    "titulo": "O Principezinho",
+    "autor": "Antoine de Saint-Exupéry",
+    "isbn": "978-0156012195",
+    "categoria": "Ficção",
+    "copias_disponiveis": 3,
+    "total_copias": 5
+  }
+]
 ```
 
-### Erro
-```json
-{
-  "success": false,
-  "message": "Descrição do erro"
-}
+### 7.2. Testar Frontend
+
+1. Abrir `http://localhost:3000`
+2. Verificar se a página inicial carrega
+3. Navegar para **Catálogo**
+4. Verificar se os livros são exibidos
+
+### 7.3. Testar Autenticação
+
+1. Clicar em **Login**
+2. Usar credenciais de teste:
+   - **Email:** `admin@booktrack.pt`
+   - **Password:** `admin123`
+3. Verificar se o login é bem-sucedido
+
+### 7.4. Verificar Proxy Frontend → Backend
+
+No frontend, abrir **DevTools** (F12) → **Network**:
+- Fazer um pedido (ex: ver catálogo)
+- Verificar se os requests aparecem como `/api/livros`
+- Status deve ser **200 OK**
+
+---
+
+## 8. Padrões de Código
+
+### 8.1. Convenções de Nomenclatura
+
+| Tipo | Convenção | Exemplo |
+|------|-----------|---------|
+| **Componentes React** | PascalCase | `BookCard.jsx`, `LoginForm.jsx` |
+| **Funções** | camelCase | `getUserById()`, `handleSubmit()` |
+| **Variáveis** | camelCase | `isAuthenticated`, `userData` |
+| **Constantes** | UPPER_SNAKE_CASE | `API_URL`, `JWT_SECRET` |
+| **Ficheiros CSS** | kebab-case | `navbar-styles.css` |
+| **Rotas API** | kebab-case | `/api/auth/login`, `/api/livros` |
+
+### 8.2. Estrutura de Ficheiros
+
+#### Frontend - Componente React
+
+```jsx
+// Imports
+import React, { useState } from 'react';
+
+// Componente
+const BookCard = ({ book }) => {
+  const [loading, setLoading] = useState(false);
+
+  const handleClick = () => {
+    // Lógica
+  };
+
+  return (
+    <div className="card">
+      {/* JSX */}
+    </div>
+  );
+};
+
+// Export
+export default BookCard;
 ```
 
-### Erro de Validação
-```json
-{
-  "success": false,
-  "errors": [
-    {
-      "msg": "Email inválido",
-      "param": "email"
+#### Backend - Controller
+
+```javascript
+// Imports
+const db = require('../config/database');
+
+// Controller
+const bookController = {
+  getAll: async (req, res) => {
+    try {
+      const [livros] = await db.query('SELECT * FROM livros');
+      res.json(livros);
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao obter livros' });
     }
-  ]
+  },
+};
+
+// Export
+module.exports = bookController;
+```
+
+### 8.3. Padrões de API REST
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| **GET** | `/api/livros` | Listar todos os livros |
+| **GET** | `/api/livros/:id` | Obter livro específico |
+| **POST** | `/api/livros` | Criar novo livro |
+| **PUT** | `/api/livros/:id` | Atualizar livro |
+| **DELETE** | `/api/livros/:id` | Deletar livro |
+
+### 8.4. Tratamento de Erros
+
+#### Frontend
+
+```jsx
+try {
+  const response = await bookService.getAll();
+  setBooks(response);
+} catch (error) {
+  console.error('Erro ao carregar livros:', error);
+  setError('Não foi possível carregar os livros');
 }
 ```
 
-## 🔧 Scripts Disponíveis
+#### Backend
 
-- `npm start` - Inicia o servidor
-- `npm run dev` - Inicia o servidor em modo desenvolvimento (com nodemon)
-- `npm run init-db` - Inicializa a base de dados
-- `npm run seed-db` - Popula a base de dados com dados de exemplo
+```javascript
+try {
+  const [result] = await db.query('SELECT * FROM livros');
+  res.json(result);
+} catch (error) {
+  console.error('Erro na BD:', error);
+  res.status(500).json({ error: 'Erro interno do servidor' });
+}
+```
 
-## 🛡️ Segurança
+## 9. Resolução de Problemas
 
-- Passwords encriptadas com bcrypt
-- Autenticação via JWT
-- Validação de dados com express-validator
-- Proteção contra SQL injection
-- CORS configurado
+### 9.1. Erro: "Port 3000 is already in use"
 
-## 📄 Licença
+**Problema:** Porta 3000 já está ocupada
 
-Este projeto é apenas para fins educacionais.
+**Solução:**
 
-## 🤝 Contribuição
+```bash
+# Windows
+netstat -ano | findstr :3000
+taskkill /PID <PID> /F
 
-Para contribuir com o projeto, por favor:
+# Linux/macOS
+lsof -ti:3000 | xargs kill -9
+```
 
-1. Faça fork do repositório
-2. Crie uma branch para sua feature (`git checkout -b feature/MinhaFeature`)
-3. Commit suas mudanças (`git commit -m 'Adiciona MinhaFeature'`)
-4. Push para a branch (`git push origin feature/MinhaFeature`)
-5. Abra um Pull Request
+Ou alterar porta no `.env`:
+```env
+PORT=3001
+```
 
-## 📞 Suporte
+### 9.2. Erro: "ECONNREFUSED" ao conectar ao Backend
 
-Para questões ou problemas, por favor abra uma issue no repositório.
+**Problema:** Backend não está a correr
+
+**Solução:**
+1. Verificar se backend está iniciado: `npm run dev` no diretório `backend/`
+2. Verificar porta no `.env` do backend
+3. Verificar firewall
+
+### 9.3. Erro: "Access denied for user"
+
+**Problema:** Credenciais da BD incorretas
+
+**Solução:**
+1. Verificar `.env` do backend
+2. Confirmar password do utilizador MySQL:
+```sql
+ALTER USER 'booktrack_user'@'localhost' IDENTIFIED BY 'nova_password';
+FLUSH PRIVILEGES;
+```
+
+### 9.4. Erro: "Cannot find module"
+
+**Problema:** Dependências não instaladas
+
+**Solução:**
+```bash
+# Reinstalar dependências
+rm -rf node_modules package-lock.json
+npm install
+```
+
+### 9.5. Erro: "Invalid token" ou "Token expired"
+
+**Problema:** Token JWT inválido
+
+**Solução:**
+1. Fazer logout e login novamente
+2. Verificar se `JWT_SECRET` no backend está correto
+3. Limpar localStorage no browser:
+```javascript
+localStorage.clear();
+```
+
+### 9.6. Erro: CORS
+
+**Problema:** Backend bloqueia pedidos do frontend
+
+**Solução:**
+
+Verificar configuração CORS no `backend/server.js`:
+
+```javascript
+const cors = require('cors');
+
+app.use(cors({
+  origin: 'http://localhost:3000',
+  credentials: true
+}));
+```
+
+### 9.7. Página em Branco no Frontend
+
+**Solução:**
+1. Abrir DevTools (F12) → Console
+2. Verificar erros JavaScript
+3. Verificar se backend está a responder
+4. Limpar cache do browser: Ctrl+Shift+R
+
+### 9.8. Livros não aparecem no Catálogo
+
+**Solução:**
+1. Verificar se existem livros na BD:
+```sql
+SELECT * FROM livros;
+```
+
+2. Verificar endpoint no browser:
+```
+http://localhost:5000/api/livros
+```
+
+3. Verificar logs do backend no terminal
+
+---
+
+## 📝 Checklist de Instalação
+
+- [ ] Node.js 18.x+ instalado
+- [ ] npm 9.x+ instalado
+- [ ] MariaDB/MySQL 10.x/8.x instalado
+- [ ] Repositório clonado
+- [ ] Dependências frontend instaladas (`npm install`)
+- [ ] Dependências backend instaladas (`npm install`)
+- [ ] Base de dados `booktrack` criada
+- [ ] Utilizador MySQL criado
+- [ ] Schema SQL importado
+- [ ] Ficheiro `.env` do frontend configurado
+- [ ] Ficheiro `.env` do backend configurado
+- [ ] JWT Secret gerado
+- [ ] Backend iniciado (porta 5000)
+- [ ] Frontend iniciado (porta 3000)
+- [ ] Testes de verificação concluídos com sucesso
+
+---
+
+## 📞 Contacto e Suporte
+
+**Equipa de Desenvolvimento:**
+- Tiago Poiares
+- Carlos Ribeiro
+- Daniel Ferreira
+
+**Repositórios:** https://github.com/Fryxion/booktrack & https://github.com/Fryxion/booktrack-backend
+
+---
+
+## 📚 Recursos Adicionais
+
+- **Documentação React:** https://react.dev/
+- **Documentação Node.js:** https://nodejs.org/docs/
+- **Documentação Express:** https://expressjs.com/
+- **Documentação MariaDB:** https://mariadb.org/documentation/
+- **Documentação Tailwind CSS:** https://tailwindcss.com/docs
+
+---
+
+**Versão do Manual:** 2.0  
+**Última Atualização:** Dezembro 2024
