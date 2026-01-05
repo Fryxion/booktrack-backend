@@ -34,6 +34,8 @@ const pool = require('../config/database');
 // - checkRole: Verifica se o utilizador tem permissão (ex: só bibliotecários)
 const { auth, checkRole } = require('../middleware/auth');
 
+const { criarNotificacao } = require('../middleware/notificacoesController');
+
 
 // ═══════════════════════════════════════════════════════════════════════
 // ROTA 1: VER LISTA DE RESERVAS
@@ -370,6 +372,8 @@ router.put('/:id/cancelar', auth, async (req, res) => {
       [reserva.id_livro]
     );
 
+
+    await criarNotificacao(req.user.id, `❌ Reserva cancelada...`, 'cancelamento');
     res.json({
       success: true,
       message: 'Reserva cancelada com sucesso'
@@ -393,7 +397,7 @@ router.post('/:id/processar', auth, checkRole(['bibliotecario']), async (req, re
     
     // 1. Buscar dados da reserva
     const [reserva] = await connection.query(
-      `SELECT r.*, l.id_livro 
+      `SELECT r.*, l.id_livro , l.titulo as livro
        FROM reservas r 
        JOIN livros l ON r.id_livro = l.id_livro 
        WHERE r.id_reserva = ?`,
@@ -408,7 +412,7 @@ router.post('/:id/processar', auth, checkRole(['bibliotecario']), async (req, re
       });
     }
     
-    const { id_utilizador, id_livro } = reserva[0];
+    const { id_utilizador, id_livro, livro } = reserva[0];
     
     // 2. Criar empréstimo (14 dias de prazo)
     const dataEmprestimo = new Date();
@@ -429,6 +433,8 @@ router.post('/:id/processar', auth, checkRole(['bibliotecario']), async (req, re
     
     await connection.commit();
     
+    await criarNotificacao(req.user.id, `✅ Reserva confirmada! "${livro}"...`, 'reserva');
+
     res.json({
       success: true,
       message: 'Reserva processada e empréstimo criado com sucesso'

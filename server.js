@@ -64,6 +64,7 @@ app.use(express.json());
 // extended: true significa que aceita dados mais complexos
 app.use(express.urlencoded({ extended: true }));
 
+require('./jobs/lembretes');
 
 // 📍 PASSO 6: DEFINIR AS ROTAS (CAMINHOS) DA API
 // ===============================================
@@ -93,6 +94,7 @@ app.use('/api/emprestimos', require('./routes/emprestimos'));
 // Rota de utilizadores (perfis, dados dos utilizadores, etc)
 app.use('/api/utilizadores', require('./routes/utilizadores'));
 
+app.use('/api/notificacoes', require('./routes/notificacoes'));
 
 // 🧪 ROTA DE TESTE
 // ================
