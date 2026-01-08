@@ -214,21 +214,6 @@ const initDatabase = async () => {
     `);
     console.log('✅ Tabela relatorios criada');
 
-    // ============================================
-    // TABELA: Catálogo
-    // ============================================
-    console.log('📑 A criar tabela catalogo...');
-    await connection.query(`
-      CREATE TABLE catalogo (
-        id_catalogo INT(11) NOT NULL AUTO_INCREMENT,
-        data_utilizacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Data da última atualização',
-        
-        PRIMARY KEY (id_catalogo)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci 
-      COMMENT='Registo de utilização do catálogo'
-    `);
-    console.log('✅ Tabela catalogo criada');
-
     console.log('\n🎉 Base de dados inicializada com sucesso!');
     console.log('Execute "npm run seed-db" para popular com dados de exemplo\n');
 
